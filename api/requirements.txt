@@ -1,0 +1,6 @@
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+SQLAlchemy==2.0.36
+PyMySQL==1.1.1
+# o MySQL 8 usa caching_sha2_password: o PyMySQL precisa disto para logar
+cryptography==43.0.3

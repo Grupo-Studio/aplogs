@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>aplogs</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6' fill='%2334d399'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<!-- ── Login ──────────────────────────────────────────────────────────── -->
+<main id="tela-login" class="login" hidden>
+  <form id="form-login" class="login-card" autocomplete="off">
+    <div class="marca grande"><span class="pulso"></span>aplogs</div>
+    <p class="sub">Logs e monitoramento dos serviços</p>
+    <input id="senha" type="password" placeholder="Senha" autofocus required>
+    <button type="submit">Entrar</button>
+    <p id="login-erro" class="erro" hidden></p>
+  </form>
+</main>
+
+<!-- ── App ────────────────────────────────────────────────────────────── -->
+<div id="tela-app" hidden>
+  <header class="topo">
+    <div class="marca"><span class="pulso"></span>aplogs</div>
+    <div id="resumo" class="resumo"></div>
+    <div class="topo-dir">
+      <span id="atualizado" class="mudo"></span>
+      <button id="sair" class="fantasma">Sair</button>
+    </div>
+  </header>
+
+  <nav class="abas">
+    <button data-aba="servicos" class="ativa">Serviços</button>
+    <button data-aba="logs">Logs</button>
+    <button data-aba="problemas">Problemas <span id="badge-problemas" class="badge" hidden></span></button>
+    <button data-aba="jobs">Jobs</button>
+    <button data-aba="filas">Filas</button>
+  </nav>
+
+  <!-- Serviços -->
+  <section id="aba-servicos" class="aba">
+    <div id="grade-servicos" class="grade"></div>
+    <div id="vazio-servicos" class="vazio" hidden>
+      <h3>Nenhum serviço conectado ainda</h3>
+      <p>Os serviços aparecem aqui sozinhos no primeiro heartbeat. Veja <code>docs/INTEGRACAO.md</code>.</p>
+    </div>
+  </section>
+
+  <!-- Logs -->
+  <section id="aba-logs" class="aba" hidden>
+    <div class="filtros">
+      <select id="logs-servico" class="sel-servico"><option value="">Todos os serviços</option></select>
+      <select id="logs-nivel">
+        <option value="DEBUG">Todos os níveis</option>
+        <option value="INFO">INFO+</option>
+        <option value="WARNING">WARNING+</option>
+        <option value="ERROR">ERROR+</option>
+      </select>
+      <select id="logs-modulo"><option value="">Todos os módulos</option></select>
+      <input id="logs-busca" type="search" placeholder="Buscar na mensagem…">
+      <label class="chave"><input id="logs-vivo" type="checkbox" checked> Ao vivo</label>
+    </div>
+    <div class="tabela-wrap">
+      <table class="tabela logs">
+        <thead><tr><th class="col-hora">Hora</th><th>Serviço</th><th>Nível</th><th>Módulo</th><th>Mensagem</th></tr></thead>
+        <tbody id="logs-corpo"></tbody>
+      </table>
+      <div id="logs-vazio" class="vazio" hidden>Nenhum log com esses filtros.</div>
+      <button id="logs-mais" class="fantasma largo" hidden>Carregar mais antigos</button>
+    </div>
+  </section>
+
+  <!-- Problemas -->
+  <section id="aba-problemas" class="aba" hidden>
+    <div class="filtros">
+      <select id="prob-servico" class="sel-servico"><option value="">Todos os serviços</option></select>
+      <div class="segmentado" id="prob-status">
+        <button data-v="abertos" class="ativo">Abertos</button>
+        <button data-v="resolvidos">Resolvidos</button>
+        <button data-v="todos">Todos</button>
+      </div>
+    </div>
+    <div id="lista-problemas" class="lista"></div>
+    <div id="prob-vazio" class="vazio" hidden>Nenhum problema por aqui. 🎉</div>
+  </section>
+
+  <!-- Jobs -->
+  <section id="aba-jobs" class="aba" hidden>
+    <div class="filtros">
+      <select id="jobs-servico" class="sel-servico"><option value="">Todos os serviços</option></select>
+      <select id="jobs-status">
+        <option value="">Todos os status</option>
+        <option value="rodando">Rodando</option>
+        <option value="fila">Na fila</option>
+        <option value="ok">OK</option>
+        <option value="erro">Erro</option>
+        <option value="interrompido">Interrompido</option>
+      </select>
+      <select id="jobs-tipo"><option value="">Todos os tipos</option></select>
+      <input id="jobs-busca" type="search" placeholder="Buscar…">
+    </div>
+    <div class="tabela-wrap">
+      <table class="tabela">
+        <thead><tr><th>Status</th><th>Serviço</th><th>Job</th><th>Progresso</th><th>Início</th><th>Duração</th></tr></thead>
+        <tbody id="jobs-corpo"></tbody>
+      </table>
+      <div id="jobs-vazio" class="vazio" hidden>Nenhum job.</div>
+    </div>
+  </section>
+
+  <!-- Filas -->
+  <section id="aba-filas" class="aba" hidden>
+    <div id="grade-filas" class="grade"></div>
+    <div id="filas-vazio" class="vazio" hidden>Nenhuma fila reportada.</div>
+  </section>
+</div>
+
+<!-- Detalhe do serviço -->
+<div id="gaveta-fundo" class="gaveta-fundo" hidden></div>
+<aside id="gaveta" class="gaveta" hidden></aside>
+
+<div id="toasts" class="toasts"></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
