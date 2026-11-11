@@ -232,3 +232,35 @@ def test_apagar_servico(client, ingest, painel):
 
 def test_limpeza_nao_quebra(client):
     assert isinstance(monitor.limpeza(), dict)
+
+
+# ── Integração fácil ─────────────────────────────────────────────────────────
+
+def test_chave_por_bearer_e_query(client):
+    corpo = {"servico": "facil-chave"}
+    assert client.post("/api/ingest/heartbeat", json=corpo,
+                       headers={"Authorization": "Bearer chave-teste"}).status_code == 200
+    assert client.post("/api/ingest/heartbeat?key=chave-teste", json=corpo).status_code == 200
+    assert client.post("/api/ingest/heartbeat", json=corpo,
+                       headers={"Authorization": "Bearer errada"}).status_code == 401
+    assert client.post("/api/ingest/heartbeat?key=errada", json=corpo).status_code == 401
+
+
+def test_log_avulso_sem_lista(client, ingest, painel):
+    r = client.post("/api/ingest/logs", headers=ingest,
+                    json={"servico": "facil-log", "mensagem": "uma linha só", "nivel": "erro"})
+    assert r.status_code == 200 and r.json()["recebidos"] == 1
+    logs = client.get("/api/logs?servico=facil-log&nivel=ERROR", headers=painel).json()["logs"]
+    assert [l["mensagem"] for l in logs] == ["uma linha só"] and logs[0]["nivel"] == "ERROR"
+    # sem mensagem e sem lista: erro de validação
+    assert client.post("/api/ingest/logs", headers=ingest, json={"servico": "facil-log"}).status_code == 422
+
+
+def test_heartbeat_pela_url(client, painel):
+    r = client.get("/api/ingest/heartbeat/facil-cron?key=chave-teste&intervalo_s=300&nome=Cron%20X")
+    assert r.status_code == 200 and r.json()["status"] == "online"
+    s = client.get("/api/servicos/facil-cron", headers=painel).json()["servico"]
+    assert s["nome"] == "Cron X" and s["intervalo_s"] == 300
+    assert client.post("/api/ingest/heartbeat/facil-cron?key=chave-teste&status=degradado").json()["status"] == "degradado"
+    assert client.get("/api/ingest/heartbeat/facil-cron").status_code == 401
+    assert client.get("/api/ingest/heartbeat/facil-cron?key=chave-teste&intervalo_s=0").status_code == 422

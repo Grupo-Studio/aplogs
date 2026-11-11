@@ -39,9 +39,24 @@ services:
     depends_on:
       aplogs-db:
         condition: service_healthy
+    networks:
+      - default
+      - aplogs          # outros composes na mesma máquina entram nesta rede e chamam http://aplogs-api:8000
 
 volumes:
   aplogs-mysql:
     # Nome fixo: os dados sobrevivem a "docker compose down" e "up --build".
     # Só "docker compose down -v" apaga o banco.
     name: aplogs_mysql-data
+
+networks:
+  aplogs:
+    # Nome fixo para os outros serviços usarem. No docker-compose.yml deles:
+    #   services:
+    #     meu-servico:
+    #       networks: [default, aplogs]
+    #   networks:
+    #     aplogs:
+    #       external: true
+    # e APLOGS_URL=http://aplogs-api:8000  (o banco NÃO fica nesta rede, só a API)
+    name: aplogs

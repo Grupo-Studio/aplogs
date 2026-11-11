@@ -59,8 +59,14 @@ docker compose ps                      # os dois containers devem estar "healthy
 
 ## Conectar um serviço
 
-Contrato completo em **[docs/INTEGRACAO.md](docs/INTEGRACAO.md)**. Em resumo, todo envio é um
-`POST /api/ingest/<tipo>` com o header `x-api-key` e o campo `servico`:
+Não precisa configurar nada aqui: o serviço chama a API e **se cadastra sozinho** na primeira chamada.
+Guia rápido (curl, Node, Python, rede Docker) em **[docs/INTEGRACAO.md](docs/INTEGRACAO.md)**.
+
+- **URL:** `http://aplogs-api:8000` para containers na mesma máquina (rede Docker `aplogs`);
+  `http://<ip>:3070` para o resto.
+- **Chave:** `APLOGS_INGEST_KEY`, no header `x-api-key`, em `Authorization: Bearer` ou em `?key=`.
+- **Envio:** `POST /api/ingest/<tipo>` com o campo `servico`. Heartbeat também funciona só pela URL:
+  `GET /api/ingest/heartbeat/<servico>?key=<chave>`.
 
 ```bash
 curl -X POST http://<ip>:3070/api/ingest/heartbeat \
@@ -83,7 +89,7 @@ aplogs.capturar_logging("INFO")  # logs do módulo logging vão para a aplogs
 No `.env` da aplogin:
 
 ```
-APLOGS_URL=http://<ip-da-aplogs>:3070        # mesma máquina: http://host.docker.internal:3070
+APLOGS_URL=http://<ip-da-aplogs>:3070        # mesma máquina, na rede aplogs: http://aplogs-api:8000
 APLOGS_KEY=<APLOGS_INGEST_KEY daqui>
 ```
 

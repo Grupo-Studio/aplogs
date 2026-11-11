@@ -90,9 +90,17 @@ def painel(request: Request, x_api_secret: str | None = Header(default=None)):
     raise HTTPException(401, "Faça login no painel")
 
 
-def ingestao(x_api_key: str | None = Header(default=None)):
-    """Rotas que os serviços usam para enviar dados."""
-    if not x_api_key:
-        raise HTTPException(401, "Header 'x-api-key' ausente")
-    if not hmac.compare_digest(x_api_key.encode(), config.APLOGS_INGEST_KEY.encode()):
-        raise HTTPException(401, "x-api-key inválida")
+def ingestao(request: Request, x_api_key: str | None = Header(default=None),
+             authorization: str | None = Header(default=None)):
+    """Rotas que os serviços usam para enviar dados. A chave vale em qualquer um destes lugares
+    (o que for mais fácil para a ferramenta que chama):
+      header x-api-key: <chave>  ·  header Authorization: Bearer <chave>  ·  ?key=<chave> na URL"""
+    chave = x_api_key
+    if not chave and authorization and authorization.lower().startswith("bearer "):
+        chave = authorization[7:].strip()
+    if not chave:
+        chave = request.query_params.get("key")
+    if not chave:
+        raise HTTPException(401, "Chave ausente: mande o header 'x-api-key' (ou Authorization: Bearer, ou ?key=)")
+    if not hmac.compare_digest(chave.encode(), config.APLOGS_INGEST_KEY.encode()):
+        raise HTTPException(401, "Chave de envio inválida")
