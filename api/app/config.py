@@ -5,6 +5,7 @@ Configuração da aplogs via variáveis de ambiente (veja .env.example na raiz).
 """
 
 import os
+from urllib.parse import quote_plus
 
 
 def _int(nome: str, padrao: int) -> int:
@@ -30,7 +31,8 @@ DB_USER     = os.getenv("DB_USER", "aplogs")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "")
 DB_NAME     = os.getenv("DB_NAME", "aplogs")
 DATABASE_URL = os.getenv("DATABASE_URL") or (
-    f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}?charset=utf8mb4"
+    # usuário/senha codificados: senha com @ : / # % etc. quebraria a URL
+    f"mysql+pymysql://{quote_plus(DB_USER)}:{quote_plus(DB_PASSWORD)}@{DB_HOST}:{DB_PORT}/{DB_NAME}?charset=utf8mb4"
 )
 
 # ── Monitor de heartbeat ─────────────────────────────────────────────────────

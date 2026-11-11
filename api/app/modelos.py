@@ -22,7 +22,8 @@ from .db import Base, agora
 # Tipos que mudam entre MySQL e sqlite (testes)
 ID_GRANDE = BigInteger().with_variant(Integer, "sqlite")          # autoincrement no sqlite só com INTEGER
 DATA = DateTime().with_variant(mysql.DATETIME(fsp=3), "mysql")     # milissegundos no MySQL
-TEXTO_LONGO = Text().with_variant(mysql.MEDIUMTEXT(), "mysql")      # tracebacks grandes
+TEXTO_LONGO = Text().with_variant(mysql.MEDIUMTEXT(), "mysql")      # tracebacks e textos longos
+# (TEXT do MySQL = 64 KB em BYTES; com acento/emoji em utf8mb4, 60 mil caracteres podem passar disso)
 
 
 class Servico(Base):
@@ -32,7 +33,7 @@ class Servico(Base):
     slug:                Mapped[str] = mapped_column(String(80), unique=True, nullable=False)
     nome:                Mapped[str] = mapped_column(String(160), nullable=False)
     nome_editado:        Mapped[bool] = mapped_column(Boolean, default=False)   # editado no painel: o heartbeat não troca
-    descricao:           Mapped[str | None] = mapped_column(Text)
+    descricao:           Mapped[str | None] = mapped_column(TEXTO_LONGO)
     grupo:               Mapped[str | None] = mapped_column(String(80))
     versao:              Mapped[str | None] = mapped_column(String(80))
     host:                Mapped[str | None] = mapped_column(String(160))
@@ -77,7 +78,7 @@ class Log(Base):
     nivel:       Mapped[str] = mapped_column(String(10), nullable=False)             # DEBUG INFO WARNING ERROR CRITICAL
     nivel_num:   Mapped[int] = mapped_column(Integer, nullable=False)                # 10 20 30 40 50 (filtro "mínimo")
     modulo:      Mapped[str | None] = mapped_column(String(80))
-    mensagem:    Mapped[str] = mapped_column(Text, nullable=False)
+    mensagem:    Mapped[str] = mapped_column(TEXTO_LONGO, nullable=False)
     exc:         Mapped[str | None] = mapped_column(TEXTO_LONGO)                     # traceback
     contexto:    Mapped[dict | None] = mapped_column(JSON)
 
@@ -91,7 +92,7 @@ class Problema(Base):
     servico_id:    Mapped[int] = mapped_column(ForeignKey("servicos.id", ondelete="CASCADE"), nullable=False)
     chave:         Mapped[str] = mapped_column(String(191), nullable=False)          # identifica o problema (dedup)
     titulo:        Mapped[str] = mapped_column(String(300), nullable=False)
-    descricao:     Mapped[str | None] = mapped_column(Text)
+    descricao:     Mapped[str | None] = mapped_column(TEXTO_LONGO)
     severidade:    Mapped[str] = mapped_column(String(10), default="erro")           # info aviso erro critico
     status:        Mapped[str] = mapped_column(String(15), default="aberto")         # aberto reconhecido resolvido
     origem:        Mapped[str] = mapped_column(String(15), default="servico")        # servico | monitor
@@ -117,7 +118,7 @@ class Job(Base):
     status:        Mapped[str] = mapped_column(String(20), default="fila")           # fila rodando ok erro interrompido
     progresso:     Mapped[float | None] = mapped_column(Float)                       # 0–100
     etapa:         Mapped[str | None] = mapped_column(String(300))
-    mensagem:      Mapped[str | None] = mapped_column(Text)
+    mensagem:      Mapped[str | None] = mapped_column(TEXTO_LONGO)
     criado_em:     Mapped[object | None] = mapped_column(DATA)
     iniciado_em:   Mapped[object | None] = mapped_column(DATA)
     terminado_em:  Mapped[object | None] = mapped_column(DATA)
