@@ -24,6 +24,7 @@ Nada aqui derruba o robô: se a aplogs estiver fora, os envios falham em silênc
 
 import atexit
 import json
+import os
 import logging
 import queue
 import socket
@@ -43,13 +44,18 @@ def _agora() -> str:
 class Aplogs:
     def __init__(self, url: str, chave: str, servico: str, nome: str | None = None, intervalo_s: int = 30,
                  versao: str | None = None, grupo: str | None = None, descricao: str | None = None,
+                 repositorio: str | None = None, branch: str | None = None, commit: str | None = None,
                  timeout_s: float = 5, max_buffer: int = 5000):
+        """repositorio: "dono/repo" ou a URL do GitHub. branch/commit: o que está rodando
+        (sem informar, usa as variáveis de ambiente GIT_BRANCH / GIT_COMMIT, se existirem)."""
         self.url = url.rstrip("/")
         self.chave = chave
         self.servico = servico
         self.nome = nome
         self.intervalo_s = intervalo_s
-        self.info = {"versao": versao, "grupo": grupo, "descricao": descricao, "host": socket.gethostname()}
+        self.info = {"versao": versao, "grupo": grupo, "descricao": descricao, "host": socket.gethostname(),
+                     "repositorio": repositorio, "branch": branch or os.getenv("GIT_BRANCH"),
+                     "commit": commit or os.getenv("GIT_COMMIT")}
         self.timeout_s = timeout_s
         self.iniciado_em = _agora()
         self._status, self._mensagem, self._dados = "ok", None, None

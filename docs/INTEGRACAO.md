@@ -100,6 +100,9 @@ Mande a cada `intervalo_s` segundos (30 é um bom padrão).
   "versao": "2.5.0",
   "host": "vm-receita",
   "ambiente": "producao",
+  "repositorio": "Grupo-Studio/aplogin",
+  "branch": "Receita-aplogs",
+  "commit": "39d86b0f3e2a1c…",
   "intervalo_s": 30,
   "status": "ok",
   "mensagem": "9/9 sessões ativas",
@@ -117,6 +120,43 @@ Mande a cada `intervalo_s` segundos (30 é um bom padrão).
 - **Offline:** sem heartbeat por mais que a tolerância (padrão `max(3 × intervalo_s, 60 s)`; ajustável no painel),
   o monitor marca offline e abre o problema `aplogs:offline` (crítico). Ele é resolvido sozinho no próximo heartbeat.
 - `dados` é livre. Os campos simples (até 2 níveis) aparecem no card; o JSON inteiro, no detalhe.
+- `repositorio` / `branch` / `commit`: veja *Repositório e versão rodando*, logo abaixo.
+
+### Repositório e versão rodando
+
+Cada serviço pode ter o **repositório do GitHub** (`dono/repo` ou a URL) e dizer **qual branch e commit
+estão rodando**. O card mostra `⎇ dono/repo · branch @ commit`, tudo com link para o GitHub. Assim dá para
+ver de relance qual versão de cada robô está no ar.
+
+- `repositorio`: o heartbeat só preenche se o serviço ainda não tiver um. Para trocar, use o painel
+  (detalhe do serviço → Configuração). Também dá para preencher **só pelo painel**, sem mexer no serviço.
+- `branch` / `commit`: o heartbeat sempre atualiza (é o que está rodando agora).
+
+Num serviço em Docker, o código não tem o `.git`; passe o commit no build. No `Dockerfile`:
+
+```dockerfile
+ARG GIT_COMMIT=""
+ARG GIT_BRANCH=""
+ENV GIT_COMMIT=$GIT_COMMIT GIT_BRANCH=$GIT_BRANCH
+```
+
+No `docker-compose.yml`:
+
+```yaml
+    build:
+      context: ./api
+      args:
+        GIT_COMMIT: ${GIT_COMMIT:-}
+        GIT_BRANCH: ${GIT_BRANCH:-}
+```
+
+E suba assim (PowerShell, no Windows):
+
+```powershell
+$env:GIT_COMMIT = git rev-parse HEAD; $env:GIT_BRANCH = git branch --show-current; docker compose up -d --build
+```
+
+O serviço manda `os.getenv("GIT_COMMIT")` / `process.env.GIT_COMMIT` no heartbeat (o cliente Python já faz isso sozinho).
 
 **Pela URL** — `GET` ou `POST /api/ingest/heartbeat/{servico}?key=<chave>`, sem corpo. Parâmetros opcionais:
 `status`, `mensagem`, `intervalo_s`, `nome`. Para quem só consegue chamar uma URL (cron, script, monitor externo).

@@ -74,6 +74,25 @@ def normalizar_severidade(valor) -> str:
     return SEVERIDADES.get(str(valor or "erro").strip().lower(), "erro")
 
 
+def normalizar_repositorio(valor) -> str | None:
+    """Aceita "dono/repo", "github.com/dono/repo", https://..., git@host:dono/repo.git.
+    Devolve a URL https sem ".git" (ou None se vazio). Só http(s): o valor vira link no painel."""
+    v = str(valor or "").strip()
+    if not v:
+        return None
+    m = re.match(r"^git@([\w.-]+):(.+)$", v)
+    if m:
+        v = f"https://{m.group(1)}/{m.group(2)}"
+    elif re.match(r"^[\w.-]+/[\w.-]+$", v):
+        v = f"https://github.com/{v}"
+    elif re.match(r"^[\w-]+(\.[\w-]+)+/", v):            # github.com/dono/repo sem https://
+        v = f"https://{v}"
+    v = re.sub(r"\.git/?$", "", v).rstrip("/")
+    if not re.match(r"^https?://[\w.-]+(:\d+)?/[^\s\"'<>]+$", v, re.IGNORECASE) or len(v) > 300:
+        raise ValueError(f"repositório inválido: '{valor}' (use dono/repo ou a URL do GitHub)")
+    return v
+
+
 def data_utc(valor) -> datetime | None:
     """ISO 8601 (com ou sem fuso; sem fuso = UTC) ou epoch em segundos → datetime UTC sem fuso."""
     if valor in (None, ""):

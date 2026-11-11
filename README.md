@@ -19,14 +19,17 @@ O primeiro serviço conectado é a **aplogin** (branch Receita), que aparece com
 | | |
 |---|---|
 | **Heartbeat** | Cada serviço manda "estou vivo" a cada N segundos. Sem heartbeat por mais que a tolerância (padrão: 3 × intervalo, mínimo 60 s), o serviço fica **offline**, ganha um log e um **problema crítico**, que é resolvido sozinho quando ele volta. Desligamento normal (heartbeat `parando`) aparece como "foi parado", não como queda. |
+| **Projetos** | Cada serviço mostra o repositório do GitHub e qual **branch @ commit** está rodando, com link (o serviço manda no heartbeat ou você preenche no painel). |
 | **Status** | `online` · `degradado` (o serviço reportou problema) · `offline` · `sem heartbeat` · `pausado` (monitoramento desligado no painel). Linha do tempo da última hora em cada card. |
 | **Logs** | Busca, filtro por serviço/nível/módulo, modo ao vivo, traceback e contexto expansíveis. |
 | **Problemas** | Abertos pelos serviços (com deduplicação por chave e contagem de ocorrências) ou pelo monitor. Reconhecer / resolver no painel. |
 | **Jobs** | Execuções e tarefas com status, progresso, etapa e duração (upsert pelo id do job). |
 | **Filas** | Na fila / rodando / concluídos / erros de cada fila, com gráfico da última hora. |
 
-Os serviços **se cadastram sozinhos** no primeiro envio. No painel dá para renomear, agrupar,
-mudar a tolerância, pausar o monitoramento ou apagar um serviço.
+Os serviços **se cadastram sozinhos** no primeiro envio. No painel dá para renomear, agrupar, ligar ao
+repositório do GitHub, mudar a tolerância, pausar o monitoramento ou apagar um serviço.
+
+Atualizar a aplogs não perde dados: no arranque ela cria sozinha as colunas novas no banco que já existe.
 
 ## Subir
 
@@ -104,7 +107,7 @@ Documentação interativa em `/api/docs`.
 |---|---|---|
 | GET | `/api/health` | Saúde (sem senha) |
 | GET | `/api/painel` | Visão geral: serviços, status, linha do tempo, totais |
-| GET/PATCH/DELETE | `/api/servicos/{slug}` | Detalhe · editar (nome, descricao, grupo, tolerancia_s, monitorar) · apagar |
+| GET/PATCH/DELETE | `/api/servicos/{slug}` | Detalhe · editar (nome, descricao, grupo, repositorio, tolerancia_s, monitorar) · apagar |
 | GET | `/api/logs` | `?servico=&nivel=&modulo=&q=&antes=&depois=&limite=` |
 | GET | `/api/problemas` | `?servico=&status=abertos\|resolvidos\|todos` |
 | POST | `/api/problemas/{id}/reconhecer` · `/resolver` | |

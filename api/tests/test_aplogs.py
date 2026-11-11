@@ -264,3 +264,36 @@ def test_heartbeat_pela_url(client, painel):
     assert client.post("/api/ingest/heartbeat/facil-cron?key=chave-teste&status=degradado").json()["status"] == "degradado"
     assert client.get("/api/ingest/heartbeat/facil-cron").status_code == 401
     assert client.get("/api/ingest/heartbeat/facil-cron?key=chave-teste&intervalo_s=0").status_code == 422
+
+
+# ── Repositório (projetos) ───────────────────────────────────────────────────
+
+def test_repositorio_pelo_heartbeat(client, ingest, painel):
+    r = client.post("/api/ingest/heartbeat", headers=ingest, json={
+        "servico": "proj-a", "repositorio": "git@github.com:Grupo-Studio/aplogin.git",
+        "branch": "Receita-aplogs", "commit": "39d86b0f3e2a1c"})
+    assert r.status_code == 200
+    s = client.get("/api/servicos/proj-a", headers=painel).json()["servico"]
+    assert s["repositorio"] == "https://github.com/Grupo-Studio/aplogin"
+    assert s["branch"] == "Receita-aplogs" and s["commit"] == "39d86b0f3e2a1c"
+    # o heartbeat não troca o repositório que já existe; branch/commit sempre atualizam
+    client.post("/api/ingest/heartbeat", headers=ingest, json={
+        "servico": "proj-a", "repositorio": "outro/repo", "commit": "abcdef1"})
+    s = client.get("/api/servicos/proj-a", headers=painel).json()["servico"]
+    assert s["repositorio"] == "https://github.com/Grupo-Studio/aplogin" and s["commit"] == "abcdef1"
+    # repositório estranho não derruba o heartbeat
+    assert client.post("/api/ingest/heartbeat", headers=ingest,
+                       json={"servico": "proj-b", "repositorio": "javascript:alert(1)"}).status_code == 200
+    assert client.get("/api/servicos/proj-b", headers=painel).json()["servico"]["repositorio"] is None
+
+
+def test_repositorio_pelo_painel(client, ingest, painel):
+    client.post("/api/ingest/heartbeat", headers=ingest, json={"servico": "proj-c"})
+    r = client.patch("/api/servicos/proj-c", headers=painel, json={"repositorio": "Grupo-Studio/aplogs"})
+    assert r.status_code == 200 and r.json()["servico"]["repositorio"] == "https://github.com/Grupo-Studio/aplogs"
+    assert client.patch("/api/servicos/proj-c", headers=painel,
+                        json={"repositorio": "javascript:alert(1)"}).status_code == 422
+    r = client.patch("/api/servicos/proj-c", headers=painel, json={"repositorio": ""})
+    assert r.json()["servico"]["repositorio"] is None
+    assert any(s["slug"] == "proj-c" and "repositorio" in s
+               for s in client.get("/api/painel", headers=painel).json()["servicos"])

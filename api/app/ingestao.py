@@ -47,6 +47,9 @@ class HeartbeatIn(BaseModel):
     versao:      str | None = Field(None, max_length=80)
     host:        str | None = Field(None, max_length=160)
     ambiente:    str | None = Field(None, max_length=40)
+    repositorio: str | None = Field(None, max_length=300)   # dono/repo ou URL do GitHub
+    branch:      str | None = Field(None, max_length=120)   # branch que está rodando
+    commit:      str | None = Field(None, max_length=64)    # commit que está rodando (sha)
     intervalo_s: int | None = Field(None, ge=1, le=86400)   # de quanto em quanto tempo o serviço manda heartbeat
     status:      str | None = "ok"                          # ok | degradado | erro | parando
     mensagem:    str | None = None
@@ -85,6 +88,15 @@ def _registrar_heartbeat(db: Session, hb: HeartbeatIn) -> dict:
             setattr(s, campo, valor)
     if hb.intervalo_s:
         s.intervalo_s = hb.intervalo_s
+    if hb.repositorio and not s.repositorio:        # o heartbeat só preenche; quem troca é o painel
+        try:
+            s.repositorio = sv.normalizar_repositorio(hb.repositorio)
+        except ValueError:
+            pass                                    # repositório estranho não derruba o heartbeat
+    if hb.branch is not None:
+        s.branch = hb.branch.strip() or None
+    if hb.commit is not None:
+        s.commit_sha = hb.commit.strip() or None
     s.status_reportado = sv.normalizar_status_hb(hb.status)
     s.mensagem = sv.corta(hb.mensagem, 500)
     if hb.iniciado_em is not None:
