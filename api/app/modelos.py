@@ -38,6 +38,9 @@ class Servico(Base):
     versao:              Mapped[str | None] = mapped_column(String(80))
     host:                Mapped[str | None] = mapped_column(String(160))
     ambiente:            Mapped[str | None] = mapped_column(String(40))
+    repositorio:         Mapped[str | None] = mapped_column(String(300))         # https://github.com/dono/repo
+    branch:              Mapped[str | None] = mapped_column(String(120))         # branch que está rodando
+    commit_sha:          Mapped[str | None] = mapped_column(String(64))          # commit que está rodando
     intervalo_s:         Mapped[int] = mapped_column(Integer, default=30)        # intervalo de heartbeat do serviço
     tolerancia_s:        Mapped[int | None] = mapped_column(Integer)             # None = max(3 × intervalo, mínimo)
     monitorar:           Mapped[bool] = mapped_column(Boolean, default=True)     # False = pausado (sem alerta de offline)

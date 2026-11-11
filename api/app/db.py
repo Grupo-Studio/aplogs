@@ -10,7 +10,7 @@ import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from . import config
@@ -57,7 +57,35 @@ def preparar(tentativas: int = 60):
             logger.warning(f"Banco ainda indisponível ({n}/{tentativas}): {e.__class__.__name__}")
             time.sleep(2)
     Base.metadata.create_all(engine)
+    _migrar()
     logger.info("Banco pronto")
+
+
+def _migrar():
+    """O create_all só cria tabela que não existe: não mexe nas que já existem. Aqui ficam os
+    ajustes para um banco criado por uma versão anterior da aplogs:
+      - adiciona as colunas novas (sempre opcionais / NULL)
+      - MySQL: TEXT → MEDIUMTEXT nas colunas que mudaram de tipo"""
+    insp = inspect(engine)
+    q = engine.dialect.identifier_preparer.quote
+    with engine.begin() as c:
+        for tabela in Base.metadata.sorted_tables:
+            if not insp.has_table(tabela.name):
+                continue
+            no_banco = {col["name"]: col for col in insp.get_columns(tabela.name)}
+            for col in tabela.columns:
+                tipo = col.type.compile(dialect=engine.dialect)
+                if col.name not in no_banco:
+                    if not col.nullable:
+                        logger.warning(f"Coluna obrigatória {tabela.name}.{col.name} faltando: crie na mão")
+                        continue
+                    c.execute(text(f"ALTER TABLE {q(tabela.name)} ADD COLUMN {q(col.name)} {tipo} NULL"))
+                    logger.info(f"Banco atualizado: coluna {tabela.name}.{col.name} criada")
+                elif (engine.dialect.name == "mysql" and tipo == "MEDIUMTEXT"
+                      and type(no_banco[col.name]["type"]).__name__ == "TEXT"):
+                    nulo = "NULL" if col.nullable else "NOT NULL"
+                    c.execute(text(f"ALTER TABLE {q(tabela.name)} MODIFY COLUMN {q(col.name)} MEDIUMTEXT {nulo}"))
+                    logger.info(f"Banco atualizado: {tabela.name}.{col.name} agora é MEDIUMTEXT")
 
 
 def get_db():

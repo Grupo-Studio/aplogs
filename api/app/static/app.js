@@ -54,6 +54,38 @@ function duracao(s) {
   return `${Math.floor(s / 3600)} h ${Math.floor(s % 3600 / 60)} min`;
 }
 
+// Repositório: o backend só guarda URL http(s). No GitHub, branch e commit também viram links.
+function repo(s) {
+  const gh = /^https:\/\/github\.com\/[^/]+\/[^/]+$/i.test(s.repositorio || "");
+  const sha = s.commit && /^[0-9a-f]{7,64}$/i.test(s.commit) ? s.commit : null;
+  const caminho = b => b.split("/").map(encodeURIComponent).join("/");
+  return {
+    url: s.repositorio || null,
+    nome: (s.repositorio || "").replace(/^https?:\/\/(www\.)?/i, "").replace(/^github\.com\//i, ""),
+    branchUrl: gh && s.branch ? `${s.repositorio}/tree/${caminho(s.branch)}` : null,
+    commitUrl: gh && sha ? `${s.repositorio}/commit/${sha}` : null,
+    commitCurto: sha ? sha.slice(0, 7) : s.commit,
+  };
+}
+
+function link(url, texto, cls = "") {
+  return url ? `<a class="link ${cls}" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(texto)}</a>` : `<span class="${cls}">${esc(texto)}</span>`;
+}
+
+// "branch @ commit" (o que está rodando agora)
+function rodando(s) {
+  const r = repo(s);
+  return [s.branch && link(r.branchUrl, s.branch, "mono"), s.commit && link(r.commitUrl, r.commitCurto, "mono")]
+    .filter(Boolean).join(` <span class="fraco">@</span> `);
+}
+
+function linhaRepo(s) {
+  if (!s.repositorio && !s.branch && !s.commit) return "";
+  const r = repo(s);
+  const versao = rodando(s);
+  return `<div class="repo-card" title="Repositório · branch @ commit rodando">⎇ ${r.url ? link(r.url, r.nome) : ""}${r.url && versao ? ` <span class="fraco">·</span> ` : ""}${versao}</div>`;
+}
+
 const NOMES_STATUS = { online: "Online", degradado: "Degradado", offline: "Offline", desconhecido: "Sem heartbeat", pausado: "Pausado" };
 const NOMES_JOB = { fila: "Na fila", rodando: "Rodando", ok: "OK", erro: "Erro", interrompido: "Interrompido" };
 
@@ -246,6 +278,7 @@ function cardServico(s) {
     </div>
     ${chavesDados(s.dados)}
     ${linhaTempo(s.timeline)}
+    ${linhaRepo(s)}
     <div class="rodape-card">
       <span>♥ ${relativo(s.ultimo_heartbeat_em)}</span>
       <span>${[s.versao && `v${esc(s.versao)}`, s.host && esc(s.host)].filter(Boolean).join(" · ")}</span>
@@ -265,6 +298,7 @@ function renderServicos(servicos) {
 }
 
 $("#grade-servicos").addEventListener("click", e => {
+  if (e.target.closest("a")) return;          // link do repositório: abre o GitHub, não a gaveta
   const card = e.target.closest(".card");
   if (card) abrirGaveta(card.dataset.slug);
 });
@@ -516,6 +550,8 @@ async function atualizarGaveta(completo = false) {
       <dt>Heartbeat</dt><dd>a cada ${s.intervalo_s} s · offline após ${duracao(s.tolerancia_efetiva_s)} sem sinal</dd>
       <dt>Processo iniciado</dt><dd>${esc(completa(s.iniciado_em))}</dd>
       <dt>Versão</dt><dd>${esc(s.versao || "—")}</dd>
+      <dt>Repositório</dt><dd>${s.repositorio ? link(s.repositorio, repo(s).nome) : `<span class="fraco">— (preencha em Configuração, abaixo)</span>`}</dd>
+      <dt>Rodando</dt><dd>${rodando(s) || `<span class="fraco">— (o serviço não mandou branch/commit)</span>`}</dd>
       <dt>Host</dt><dd>${esc(s.host || "—")}${s.ambiente ? ` · ${esc(s.ambiente)}` : ""}</dd>
       <dt>Conectado em</dt><dd>${esc(completa(s.criado_em))}</dd>
     </dl>
@@ -538,6 +574,7 @@ async function atualizarGaveta(completo = false) {
       <label>Nome<input name="nome" value="${esc(s.nome)}" maxlength="160"></label>
       <label>Descrição<textarea name="descricao" rows="2">${esc(s.descricao || "")}</textarea></label>
       <label>Grupo (agrupa os cards)<input name="grupo" value="${esc(s.grupo || "")}" maxlength="80" placeholder="ex.: Receita, RPA, APIs"></label>
+      <label>Repositório no GitHub<input name="repositorio" value="${esc(s.repositorio || "")}" maxlength="300" placeholder="ex.: Grupo-Studio/aplogin ou a URL do repositório"></label>
       <label>Tolerância sem heartbeat, em segundos (vazio = automática: ${Math.max(3 * s.intervalo_s, 60)} s)
         <input name="tolerancia_s" type="number" min="0" value="${s.tolerancia_s ?? ""}"></label>
       <label class="chave"><input name="monitorar" type="checkbox" ${s.monitorar ? "checked" : ""}> Monitorar (desligado = sem alerta de offline)</label>
@@ -559,6 +596,7 @@ async function atualizarGaveta(completo = false) {
     try {
       await api(`/api/servicos/${encodeURIComponent(s.slug)}`, { method: "PATCH", body: {
         nome: f.nome.value.trim(), descricao: f.descricao.value, grupo: f.grupo.value,
+        repositorio: f.repositorio.value.trim(),
         tolerancia_s: tol === "" ? 0 : Number(tol), monitorar: f.monitorar.checked } });
       toast("Salvo.", "var(--verde)");
       document.activeElement.blur();

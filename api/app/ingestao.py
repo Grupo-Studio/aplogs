@@ -5,18 +5,20 @@ Rotas que os serviços usam para mandar dados (header x-api-key). Todas recebem 
 (o identificador, ex.: "rpa-procuracoes-eletronicas"); o serviço é cadastrado no primeiro envio.
 
   POST /api/ingest/heartbeat   "estou vivo" + status + dados livres (a cada N segundos)
-  POST /api/ingest/logs        lote de linhas de log
+  GET|POST /api/ingest/heartbeat/{servico}   o mesmo, só pela URL (cron, curl, monitores externos)
+  POST /api/ingest/logs        uma linha de log ({"servico", "mensagem"}) ou um lote ({"servico", "logs": [...]})
   POST /api/ingest/problemas   abre/resolve problemas (com "sincronizar": envio de estado)
   POST /api/ingest/jobs        lote de jobs (upsert pelo id do job no serviço)
   POST /api/ingest/filas       foto das filas (upsert pelo nome)
 
+Chave: header x-api-key, Authorization: Bearer ou ?key= (veja auth.ingestao).
 Contrato completo: docs/INTEGRACAO.md
 """
 
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError, model_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -45,6 +47,9 @@ class HeartbeatIn(BaseModel):
     versao:      str | None = Field(None, max_length=80)
     host:        str | None = Field(None, max_length=160)
     ambiente:    str | None = Field(None, max_length=40)
+    repositorio: str | None = Field(None, max_length=300)   # dono/repo ou URL do GitHub
+    branch:      str | None = Field(None, max_length=120)   # branch que está rodando
+    commit:      str | None = Field(None, max_length=64)    # commit que está rodando (sha)
     intervalo_s: int | None = Field(None, ge=1, le=86400)   # de quanto em quanto tempo o serviço manda heartbeat
     status:      str | None = "ok"                          # ok | degradado | erro | parando
     mensagem:    str | None = None
@@ -54,6 +59,25 @@ class HeartbeatIn(BaseModel):
 
 @router.post("/heartbeat")
 def heartbeat(hb: HeartbeatIn, db: Session = Depends(get_db)):
+    return _registrar_heartbeat(db, hb)
+
+
+@router.api_route("/heartbeat/{servico}", methods=["GET", "POST"])
+def heartbeat_url(servico: str, status: str = "ok", mensagem: str | None = None, intervalo_s: int | None = None,
+                  nome: str | None = None, db: Session = Depends(get_db)):
+    """Heartbeat sem corpo, para quem só consegue chamar uma URL:
+    curl "http://<ip>:3070/api/ingest/heartbeat/robo-x?key=<chave>&intervalo_s=300" """
+    if intervalo_s is not None and not 1 <= intervalo_s <= 86400:
+        raise HTTPException(422, "intervalo_s deve ficar entre 1 e 86400")
+    try:
+        hb = HeartbeatIn(servico=servico, status=status, mensagem=mensagem, intervalo_s=intervalo_s,
+                         nome=sv.corta(nome, 160))
+    except ValidationError as e:
+        raise HTTPException(422, "; ".join(f"{'.'.join(map(str, x['loc']))}: {x['msg']}" for x in e.errors()))
+    return _registrar_heartbeat(db, hb)
+
+
+def _registrar_heartbeat(db: Session, hb: HeartbeatIn) -> dict:
     s = _servico(db, hb.servico, hb.nome)
     momento = agora()
     if hb.nome and not s.nome_editado:
@@ -64,6 +88,15 @@ def heartbeat(hb: HeartbeatIn, db: Session = Depends(get_db)):
             setattr(s, campo, valor)
     if hb.intervalo_s:
         s.intervalo_s = hb.intervalo_s
+    if hb.repositorio and not s.repositorio:        # o heartbeat só preenche; quem troca é o painel
+        try:
+            s.repositorio = sv.normalizar_repositorio(hb.repositorio)
+        except ValueError:
+            pass                                    # repositório estranho não derruba o heartbeat
+    if hb.branch is not None:
+        s.branch = hb.branch.strip() or None
+    if hb.commit is not None:
+        s.commit_sha = hb.commit.strip() or None
     s.status_reportado = sv.normalizar_status_hb(hb.status)
     s.mensagem = sv.corta(hb.mensagem, 500)
     if hb.iniciado_em is not None:
@@ -90,9 +123,26 @@ class LogIn(BaseModel):
 
 
 class LogsIn(BaseModel):
-    servico: str = Field(..., max_length=120)
-    nome:    str | None = None
-    logs:    list[LogIn] = Field(..., min_length=1)
+    """Lote ({"servico", "logs": [...]}) ou uma linha só, com os campos do log no próprio corpo
+    ({"servico", "mensagem", "nivel", ...})."""
+    servico:  str = Field(..., max_length=120)
+    nome:     str | None = None
+    logs:     list[LogIn] | None = None
+    mensagem: str | None = None
+    nivel:    str | int | None = "INFO"
+    ts:       str | float | None = None
+    modulo:   str | None = None
+    exc:      str | None = None
+    contexto: dict[str, Any] | None = None
+
+    @model_validator(mode="after")
+    def _uma_ou_lote(self):
+        if self.logs is None and self.mensagem is not None:
+            self.logs = [LogIn(mensagem=self.mensagem, nivel=self.nivel, ts=self.ts, modulo=self.modulo,
+                               exc=self.exc, contexto=self.contexto)]
+        if not self.logs:
+            raise ValueError("mande 'mensagem' (uma linha) ou 'logs' (lista com pelo menos uma linha)")
+        return self
 
 
 @router.post("/logs")

@@ -5,7 +5,7 @@ Rotas de leitura do painel (cookie de login ou header x-api-secret).
 
   GET    /api/painel                      visão geral: serviços, status, linha do tempo de heartbeat, totais
   GET    /api/servicos/{slug}             detalhe de um serviço
-  PATCH  /api/servicos/{slug}             nome, descrição, grupo, tolerância, monitorar
+  PATCH  /api/servicos/{slug}             nome, descrição, grupo, repositório, tolerância, monitorar
   DELETE /api/servicos/{slug}             apaga o serviço e tudo dele
   GET    /api/logs                        logs (?servico=&nivel=&modulo=&q=&antes=&depois=&limite=)
   GET    /api/logs/modulos                módulos que aparecem nos logs (?servico=)
@@ -41,6 +41,7 @@ def servico_json(s: Servico) -> dict:
     return {
         "id": s.id, "slug": s.slug, "nome": s.nome, "descricao": s.descricao, "grupo": s.grupo,
         "versao": s.versao, "host": s.host, "ambiente": s.ambiente,
+        "repositorio": s.repositorio, "branch": s.branch, "commit": s.commit_sha,
         "status": s.status, "status_desde": iso(s.status_desde), "status_reportado": s.status_reportado,
         "mensagem": s.mensagem, "monitorar": s.monitorar, "intervalo_s": s.intervalo_s,
         "tolerancia_s": s.tolerancia_s, "tolerancia_efetiva_s": sv.tolerancia(s),
@@ -185,6 +186,7 @@ class ServicoEdit(BaseModel):
     nome:         str | None = Field(None, min_length=1, max_length=160)
     descricao:    str | None = None
     grupo:        str | None = Field(None, max_length=80)
+    repositorio:  str | None = Field(None, max_length=300)          # vazio = tira o repositório
     tolerancia_s: int | None = Field(None, ge=0, le=7 * 86400)      # 0 = automática
     monitorar:    bool | None = None
 
@@ -199,6 +201,11 @@ def editar_servico(slug: str, corpo: ServicoEdit, db: Session = Depends(get_db))
         s.descricao = (dados["descricao"] or "").strip() or None
     if "grupo" in dados:
         s.grupo = (dados["grupo"] or "").strip() or None
+    if "repositorio" in dados:
+        try:
+            s.repositorio = sv.normalizar_repositorio(dados["repositorio"])
+        except ValueError as e:
+            raise HTTPException(422, str(e))
     if "tolerancia_s" in dados:
         s.tolerancia_s = dados["tolerancia_s"] or None
     if "monitorar" in dados and dados["monitorar"] is not None:

@@ -1,8 +1,79 @@
 # Integração com a aplogs
 
-Todo envio é `POST http://<ip>:3070/api/ingest/<tipo>` com:
+Para conectar um serviço não precisa configurar nada na aplogs: é só chamar a API. O serviço
+**se cadastra sozinho** na primeira chamada e já aparece no painel.
 
-- header `x-api-key: <APLOGS_INGEST_KEY>`
+## Em 1 minuto
+
+**Endereço** (`APLOGS_URL` no seu serviço):
+
+| De onde o serviço chama | URL |
+|---|---|
+| Container na mesma máquina, na rede `aplogs` (veja abaixo) | `http://aplogs-api:8000` |
+| Outra máquina da rede (ou fora do Docker) | `http://<ip-da-aplogs>:3070` |
+
+**Chave** (`APLOGS_INGEST_KEY` do `.env` da aplogs). Mande do jeito que for mais fácil:
+header `x-api-key: <chave>`, header `Authorization: Bearer <chave>` ou `?key=<chave>` na URL.
+
+**Pronto.** Os três envios que cobrem quase tudo:
+
+```bash
+# 1) "estou vivo" (a cada 30 s). Se parar, o serviço fica OFFLINE e abre um alerta no painel.
+curl -X POST "$APLOGS_URL/api/ingest/heartbeat" -H "x-api-key: $APLOGS_KEY" -H "Content-Type: application/json" \
+  -d '{"servico": "robo-x", "nome": "Robô X", "intervalo_s": 30}'
+
+# 2) uma linha de log
+curl -X POST "$APLOGS_URL/api/ingest/logs" -H "x-api-key: $APLOGS_KEY" -H "Content-Type: application/json" \
+  -d '{"servico": "robo-x", "nivel": "ERROR", "mensagem": "Falha ao baixar a DCTF"}'
+
+# 3) heartbeat só pela URL (cron, script shell, Uptime Kuma, Task Scheduler...)
+curl "$APLOGS_URL/api/ingest/heartbeat/robo-x?key=$APLOGS_KEY&intervalo_s=300"
+```
+
+Node (18+, sem biblioteca):
+
+```js
+const APLOGS_URL = process.env.APLOGS_URL, APLOGS_KEY = process.env.APLOGS_KEY;
+async function aplogs(tipo, corpo) {
+  try {
+    await fetch(`${APLOGS_URL}/api/ingest/${tipo}`, {
+      method: "POST", signal: AbortSignal.timeout(5000),
+      headers: { "Content-Type": "application/json", "x-api-key": APLOGS_KEY },
+      body: JSON.stringify({ servico: "meu-servico", nome: "Meu Serviço", ...corpo }),
+    });
+  } catch { /* a aplogs fora nunca derruba o serviço */ }
+}
+setInterval(() => aplogs("heartbeat", { intervalo_s: 30 }), 30_000);
+aplogs("logs", { nivel: "INFO", mensagem: "subiu" });
+```
+
+Python: copie `clientes/python/aplogs_client.py` (só biblioteca padrão), ou veja o *Exemplo mínimo* no fim.
+
+### Rede Docker (serviço na mesma máquina)
+
+A aplogs cria a rede `aplogs`. No `docker-compose.yml` do outro serviço:
+
+```yaml
+services:
+  meu-servico:
+    environment:
+      APLOGS_URL: http://aplogs-api:8000
+    networks: [default, aplogs]
+
+networks:
+  aplogs:
+    external: true
+```
+
+Suba a aplogs primeiro (é ela que cria a rede). Só a API fica nessa rede; o banco não.
+
+---
+
+## Detalhes do contrato
+
+Todo envio é `POST <APLOGS_URL>/api/ingest/<tipo>` com:
+
+- a chave (veja acima)
 - header `Content-Type: application/json`
 - campo `servico`: identificador fixo do serviço (minúsculas, números, `-`, `_`, `.`; ex.: `robo-dctf`)
 - campo `nome` (opcional): nome amigável. Vale para o cadastro automático e o heartbeat atualiza.
@@ -29,6 +100,9 @@ Mande a cada `intervalo_s` segundos (30 é um bom padrão).
   "versao": "2.5.0",
   "host": "vm-receita",
   "ambiente": "producao",
+  "repositorio": "Grupo-Studio/aplogin",
+  "branch": "Receita-aplogs",
+  "commit": "39d86b0f3e2a1c…",
   "intervalo_s": 30,
   "status": "ok",
   "mensagem": "9/9 sessões ativas",
@@ -46,10 +120,53 @@ Mande a cada `intervalo_s` segundos (30 é um bom padrão).
 - **Offline:** sem heartbeat por mais que a tolerância (padrão `max(3 × intervalo_s, 60 s)`; ajustável no painel),
   o monitor marca offline e abre o problema `aplogs:offline` (crítico). Ele é resolvido sozinho no próximo heartbeat.
 - `dados` é livre. Os campos simples (até 2 níveis) aparecem no card; o JSON inteiro, no detalhe.
+- `repositorio` / `branch` / `commit`: veja *Repositório e versão rodando*, logo abaixo.
+
+### Repositório e versão rodando
+
+Cada serviço pode ter o **repositório do GitHub** (`dono/repo` ou a URL) e dizer **qual branch e commit
+estão rodando**. O card mostra `⎇ dono/repo · branch @ commit`, tudo com link para o GitHub. Assim dá para
+ver de relance qual versão de cada robô está no ar.
+
+- `repositorio`: o heartbeat só preenche se o serviço ainda não tiver um. Para trocar, use o painel
+  (detalhe do serviço → Configuração). Também dá para preencher **só pelo painel**, sem mexer no serviço.
+- `branch` / `commit`: o heartbeat sempre atualiza (é o que está rodando agora).
+
+Num serviço em Docker, o código não tem o `.git`; passe o commit no build. No `Dockerfile`:
+
+```dockerfile
+ARG GIT_COMMIT=""
+ARG GIT_BRANCH=""
+ENV GIT_COMMIT=$GIT_COMMIT GIT_BRANCH=$GIT_BRANCH
+```
+
+No `docker-compose.yml`:
+
+```yaml
+    build:
+      context: ./api
+      args:
+        GIT_COMMIT: ${GIT_COMMIT:-}
+        GIT_BRANCH: ${GIT_BRANCH:-}
+```
+
+E suba assim (PowerShell, no Windows):
+
+```powershell
+$env:GIT_COMMIT = git rev-parse HEAD; $env:GIT_BRANCH = git branch --show-current; docker compose up -d --build
+```
+
+O serviço manda `os.getenv("GIT_COMMIT")` / `process.env.GIT_COMMIT` no heartbeat (o cliente Python já faz isso sozinho).
+
+**Pela URL** — `GET` ou `POST /api/ingest/heartbeat/{servico}?key=<chave>`, sem corpo. Parâmetros opcionais:
+`status`, `mensagem`, `intervalo_s`, `nome`. Para quem só consegue chamar uma URL (cron, script, monitor externo).
+Ponha em `intervalo_s` de quanto em quanto tempo a URL é chamada, senão o serviço cai como offline entre as chamadas.
 
 ## Logs — `POST /api/ingest/logs`
 
-Em lote (até 2000 por envio).
+Uma linha: `{"servico": "robo-dctf", "nivel": "ERROR", "mensagem": "…"}` (os campos abaixo valem também).
+
+Em lote (até 2000 por envio):
 
 ```json
 {

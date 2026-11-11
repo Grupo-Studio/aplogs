@@ -232,3 +232,68 @@ def test_apagar_servico(client, ingest, painel):
 
 def test_limpeza_nao_quebra(client):
     assert isinstance(monitor.limpeza(), dict)
+
+
+# ── Integração fácil ─────────────────────────────────────────────────────────
+
+def test_chave_por_bearer_e_query(client):
+    corpo = {"servico": "facil-chave"}
+    assert client.post("/api/ingest/heartbeat", json=corpo,
+                       headers={"Authorization": "Bearer chave-teste"}).status_code == 200
+    assert client.post("/api/ingest/heartbeat?key=chave-teste", json=corpo).status_code == 200
+    assert client.post("/api/ingest/heartbeat", json=corpo,
+                       headers={"Authorization": "Bearer errada"}).status_code == 401
+    assert client.post("/api/ingest/heartbeat?key=errada", json=corpo).status_code == 401
+
+
+def test_log_avulso_sem_lista(client, ingest, painel):
+    r = client.post("/api/ingest/logs", headers=ingest,
+                    json={"servico": "facil-log", "mensagem": "uma linha só", "nivel": "erro"})
+    assert r.status_code == 200 and r.json()["recebidos"] == 1
+    logs = client.get("/api/logs?servico=facil-log&nivel=ERROR", headers=painel).json()["logs"]
+    assert [l["mensagem"] for l in logs] == ["uma linha só"] and logs[0]["nivel"] == "ERROR"
+    # sem mensagem e sem lista: erro de validação
+    assert client.post("/api/ingest/logs", headers=ingest, json={"servico": "facil-log"}).status_code == 422
+
+
+def test_heartbeat_pela_url(client, painel):
+    r = client.get("/api/ingest/heartbeat/facil-cron?key=chave-teste&intervalo_s=300&nome=Cron%20X")
+    assert r.status_code == 200 and r.json()["status"] == "online"
+    s = client.get("/api/servicos/facil-cron", headers=painel).json()["servico"]
+    assert s["nome"] == "Cron X" and s["intervalo_s"] == 300
+    assert client.post("/api/ingest/heartbeat/facil-cron?key=chave-teste&status=degradado").json()["status"] == "degradado"
+    assert client.get("/api/ingest/heartbeat/facil-cron").status_code == 401
+    assert client.get("/api/ingest/heartbeat/facil-cron?key=chave-teste&intervalo_s=0").status_code == 422
+
+
+# ── Repositório (projetos) ───────────────────────────────────────────────────
+
+def test_repositorio_pelo_heartbeat(client, ingest, painel):
+    r = client.post("/api/ingest/heartbeat", headers=ingest, json={
+        "servico": "proj-a", "repositorio": "git@github.com:Grupo-Studio/aplogin.git",
+        "branch": "Receita-aplogs", "commit": "39d86b0f3e2a1c"})
+    assert r.status_code == 200
+    s = client.get("/api/servicos/proj-a", headers=painel).json()["servico"]
+    assert s["repositorio"] == "https://github.com/Grupo-Studio/aplogin"
+    assert s["branch"] == "Receita-aplogs" and s["commit"] == "39d86b0f3e2a1c"
+    # o heartbeat não troca o repositório que já existe; branch/commit sempre atualizam
+    client.post("/api/ingest/heartbeat", headers=ingest, json={
+        "servico": "proj-a", "repositorio": "outro/repo", "commit": "abcdef1"})
+    s = client.get("/api/servicos/proj-a", headers=painel).json()["servico"]
+    assert s["repositorio"] == "https://github.com/Grupo-Studio/aplogin" and s["commit"] == "abcdef1"
+    # repositório estranho não derruba o heartbeat
+    assert client.post("/api/ingest/heartbeat", headers=ingest,
+                       json={"servico": "proj-b", "repositorio": "javascript:alert(1)"}).status_code == 200
+    assert client.get("/api/servicos/proj-b", headers=painel).json()["servico"]["repositorio"] is None
+
+
+def test_repositorio_pelo_painel(client, ingest, painel):
+    client.post("/api/ingest/heartbeat", headers=ingest, json={"servico": "proj-c"})
+    r = client.patch("/api/servicos/proj-c", headers=painel, json={"repositorio": "Grupo-Studio/aplogs"})
+    assert r.status_code == 200 and r.json()["servico"]["repositorio"] == "https://github.com/Grupo-Studio/aplogs"
+    assert client.patch("/api/servicos/proj-c", headers=painel,
+                        json={"repositorio": "javascript:alert(1)"}).status_code == 422
+    r = client.patch("/api/servicos/proj-c", headers=painel, json={"repositorio": ""})
+    assert r.json()["servico"]["repositorio"] is None
+    assert any(s["slug"] == "proj-c" and "repositorio" in s
+               for s in client.get("/api/painel", headers=painel).json()["servicos"])
