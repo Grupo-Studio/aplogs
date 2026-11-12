@@ -187,4 +187,5 @@ api/app/
   static/        painel (HTML + CSS + JS puro, sem build)
 clientes/python/aplogs_client.py   cliente para robôs em Python
 docs/INTEGRACAO.md                 contrato de envio
+docs/IMPLEMENTACAO.md              como funciona por dentro (arquitetura, banco, auth, status, testes)
 ```
