@@ -31,6 +31,8 @@ services:
     restart: unless-stopped
     init: true
     env_file: .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # apusers (login central) na mesma máquina: http://host.docker.internal:3080
     environment:
       DB_HOST: aplogs-db
       DB_PORT: 3306

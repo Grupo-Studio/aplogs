@@ -10,6 +10,7 @@ Tabelas da aplogs. Datas sempre em UTC (DATETIME sem fuso).
   jobs           execuções/tarefas dos serviços (upsert pelo id do job no serviço)
   filas          foto atual de cada fila de cada serviço (upsert pelo nome)
   fila_amostras  histórico curto das filas (gráfico da última hora)
+  web_sessoes    sessões do painel (login central/apusers): o cookie leva só o id
 """
 
 from sqlalchemy import (JSON, BigInteger, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text,
@@ -103,7 +104,7 @@ class Problema(Base):
     primeira_vez:  Mapped[object] = mapped_column(DATA, default=agora)
     ultima_vez:    Mapped[object] = mapped_column(DATA, default=agora)
     resolvido_em:  Mapped[object | None] = mapped_column(DATA)
-    resolvido_por: Mapped[str | None] = mapped_column(String(80))                    # servico | monitor | painel
+    resolvido_por: Mapped[str | None] = mapped_column(String(80))                    # servico | monitor | nome de quem resolveu no painel
     dados:         Mapped[dict | None] = mapped_column(JSON)
 
 
@@ -156,3 +157,17 @@ class FilaAmostra(Base):
     pendentes: Mapped[int] = mapped_column(Integer, default=0)
     rodando:   Mapped[int] = mapped_column(Integer, default=0)
     erros:     Mapped[int] = mapped_column(Integer, default=0)
+
+
+class WebSessao(Base):
+    """Sessão do painel. Os tokens do apusers ficam AQUI, nunca no navegador (o cookie leva só o id).
+    A renovação do token (de uso único) trava a linha: duas abas renovando juntas não derrubam a sessão."""
+    __tablename__ = "web_sessoes"
+
+    id:            Mapped[str] = mapped_column(String(64), primary_key=True)
+    access_token:  Mapped[str] = mapped_column(Text, nullable=False)
+    refresh_token: Mapped[str] = mapped_column(String(300), nullable=False)
+    email:         Mapped[str | None] = mapped_column(String(191))
+    expira:        Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)    # epoch: fim da sessão do painel
+    criada:        Mapped[int] = mapped_column(BigInteger, nullable=False)
+    renovada:      Mapped[int | None] = mapped_column(BigInteger)
