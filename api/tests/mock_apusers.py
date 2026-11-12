@@ -11,6 +11,7 @@ Usuários (senha = "senha-" + primeiro nome):
   gil@exemplo.test     gestor            sem@exemplo.test     acesso sem papel (vale o PAPEL_PADRAO)
   bruno@exemplo.test   sem acesso (403 acesso_restrito, abre pedido)
   paula@exemplo.test   cadastro pendente (403 usuario_pendente)
+  adm@exemplo.test     administrador do apusers com acesso SEM papel (vira gestor na aplogs)
 """
 
 import itertools
@@ -27,6 +28,7 @@ USUARIOS = {
     "sem@exemplo.test":   {"id": "u-sem", "name": "Sem Papel", "role": None},
     "bruno@exemplo.test": {"id": "u-bruno", "name": "Bruno", "role": None, "acesso": False},
     "paula@exemplo.test": {"id": "u-paula", "name": "Paula", "role": None, "status": "pendente"},
+    "adm@exemplo.test":   {"id": "u-adm", "name": "Administrador", "role": None, "is_admin": True},
 }
 _trava = threading.Lock()
 _seq = itertools.count(1)
@@ -57,7 +59,8 @@ def _par(email, sid=None):
 
 def _publico(email):
     u = USUARIOS[email]
-    return {"id": u["id"], "email": email, "name": u["name"], "status": u.get("status", "ativo")}
+    return {"id": u["id"], "email": email, "name": u["name"], "status": u.get("status", "ativo"),
+            "is_admin": bool(u.get("is_admin"))}
 
 
 class H(BaseHTTPRequestHandler):

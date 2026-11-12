@@ -41,7 +41,8 @@ servidor: o navegador nunca fala com o apusers.
   id assinado. Os tokens do apusers nunca chegam ao navegador. Duas abas renovando o token juntas não derrubam a
   sessão.
 - **Papéis** (declarados no apusers quando a aplogs sobe; o administrador escolhe o de cada pessoa). Quem tem
-  acesso sem papel fica com `PAPEL_PADRAO` (`visualizador`).
+  acesso sem papel fica com `PAPEL_PADRAO` (`visualizador`). **Administrador do apusers é sempre `gestor`** na aplogs
+  (ele já poderia se dar qualquer papel lá).
 
   | | visualizador | operador | gestor |
   |---|:-:|:-:|:-:|

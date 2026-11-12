@@ -4,7 +4,7 @@ Como a aplogs funciona por dentro: arquitetura, módulos, banco, autenticação,
 fundo, painel e testes. Para **subir e operar**, veja o [README](../README.md); para **conectar um serviço**,
 veja [INTEGRACAO.md](INTEGRACAO.md).
 
-Versão descrita: **1.2.0** (`VERSAO` em `api/app/main.py`).
+Versão descrita: **1.2.1** (`VERSAO` em `api/app/main.py`).
 
 ---
 
@@ -232,6 +232,10 @@ Definidos em `acesso.py` e declarados no apusers na subida (`PATCH /v1/service/m
 | `tratar` | operador, gestor | `POST /api/problemas/{id}/reconhecer` e `/resolver` |
 | `gerenciar` | gestor | `PATCH`/`DELETE /api/servicos/{slug}`, `GET`/`POST /api/integracao` |
 
+Administrador do apusers (`user.is_admin` no `verify`/`login`) vira `gestor` (`acesso.PAPEL_ADMIN`), mesmo com
+acesso sem papel; `Usuario.admin` vai para o painel, que mostra "gestor · admin". Tirar o admin no apusers vale em
+até 30 s, como qualquer troca de papel.
+
 `exigir(acao)` valida o nome da ação na importação (erro de programação vira `ValueError` no arranque) e, sem
 permissão, responde 403 `sem_permissao` com o papel atual. Papel desconhecido vindo do apusers vira
 `PAPEL_PADRAO`. O frontend esconde o que o papel não permite (`pode(acao)` em `app.js`), mas a API confere sempre.
@@ -443,7 +447,10 @@ HTML + CSS + JS puro, sem build, servido por `GET /` (`Cache-Control: no-cache`)
 - **Atualização por polling**: painel a cada 5 s; aba atual a cada 5 s (exceto Logs); Logs em modo ao vivo a
   cada 3 s com `depois=<ultimoId>`; "rolar para baixo" usa `antes=<id>`.
 - **Notificações**: `avisarMudancas` compara o status anterior/atual dos serviços e mostra *toasts*.
-- **Gaveta de serviço**: detalhe, edição (PATCH) e exclusão, conforme `pode("gerenciar")`.
+- **Gaveta de serviço**: detalhe, edição (PATCH) e exclusão (botão "Excluir" no topo e "Apagar serviço" na
+  Configuração; a confirmação avisa quando o serviço ainda está online, porque ele volta no próximo heartbeat),
+  conforme `pode("gerenciar")`. O botão "Gerenciar integração" aparece para todos; sem `gerenciar`, explica que é
+  do papel gestor em vez de abrir.
 - **Gráficos**: linha do tempo (barras) e *sparkline* das filas em SVG gerado no próprio JS.
 - **Atividade** (módulo `atividade` em `app.js`): mede tempo por aba; fica ocioso após 5 min sem interação
   (mouse, teclado, clique, rolagem, toque) ou com a aba oculta; corta trechos longos a cada 5 min; envia a cada
@@ -490,7 +497,7 @@ python -m pytest tests -q
   pendente) e rotas de controle `/_mock/...` para simular token vencido, acesso revogado e troca de papel.
 - Fixtures: `client` (TestClient com lifespan), `ingest` (`x-api-key`), `painel` (`x-api-secret`) e o helper
   `entrar(client, nome)`.
-- Cobertura atual (34 testes): autenticação (chave, secret, login, pendente, renovação única do token, acesso
+- Cobertura atual (35 testes): autenticação (chave, secret, login, pendente, renovação única do token, acesso
   revogado, papéis declarados, permissões por papel, atividade), heartbeat e cadastro, offline/volta, parada
   normal, degradado, pausa, slug inválido, logs (filtros, paginação, linha avulsa), problemas (eventos e estado),
   jobs, filas, apagar serviço, limpeza, repositório pelo heartbeat e pelo painel, heartbeat por URL, "Gerenciar integração" (só gestor, `.env`/`.txt`

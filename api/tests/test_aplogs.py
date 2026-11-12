@@ -515,3 +515,19 @@ def test_cliente_python_do_ambiente(monkeypatch):
     a = Aplogs.do_ambiente(versao="2.0")
     assert (a.url, a.chave, a.servico, a.nome, a.intervalo_s) == ("http://x:3070", "k", "robo-env", "Robô Env", 45)
     assert a.info["grupo"] == "G" and a.info["versao"] == "2.0"
+
+
+def test_admin_do_apusers_e_gestor(client, ingest):
+    """Administrador do apusers com acesso à aplogs mas sem papel: vale como gestor (exclui serviço, integra)."""
+    from conftest import entrar
+    W = {"X-Web": "1"}
+    u = entrar(client, "adm")
+    assert u["papel"] == "gestor" and u["admin"] is True and "gerenciar" in u["permissoes"]
+    assert client.get("/api/auth/sessao").json()["usuario"]["papel"] == "gestor"
+    assert client.post("/api/integracao", headers=W, json={"servico": "robo-adm", "nome": "Robô Adm"}).json()["criado"]
+    assert client.delete("/api/servicos/robo-adm", headers=W).json()["apagado"] == "robo-adm"
+    assert client.get("/api/servicos/robo-adm").status_code == 404
+    entrar(client, "sem")                                            # quem não é admin e não tem papel segue visualizador
+    assert client.get("/api/auth/sessao").json()["usuario"] == {**client.get("/api/auth/sessao").json()["usuario"],
+                                                                "papel": "visualizador", "admin": False}
+    client.post("/api/auth/logout", headers=W)
