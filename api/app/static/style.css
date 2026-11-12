@@ -43,6 +43,13 @@ button { cursor: pointer; }
 .login-card button { padding: 11px; border: 0; border-radius: 8px; background: var(--verde); color: #05261a; font-weight: 700; }
 .login-card button:disabled { opacity: .6; }
 .erro { color: var(--vermelho); margin: 0; text-align: center; font-size: 13px; }
+.ok { color: var(--verde); margin: 0; text-align: center; font-size: 13px; }
+.login-card textarea { padding: 11px 13px; background: var(--fundo-2); border: 1px solid var(--borda); border-radius: 8px; outline: none; font: inherit; resize: vertical; }
+.login-card .troca { color: var(--azul); text-align: center; font-size: 13px; text-decoration: none; }
+.quem { color: var(--mudo); font-size: 13px; white-space: nowrap; }
+.quem b { color: var(--texto); font-weight: 600; }
+.papel { border: 1px solid var(--borda); border-radius: 999px; padding: 1px 8px; margin-left: 6px; font-size: 11px; }
+.so-leitura { color: var(--mudo); font-size: 12px; margin: 4px 0 0; }
 
 /* ── Topo e abas ──────────────────────────────────────── */
 .topo { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 22px; padding: 12px 24px; background: rgba(13,17,23,.92); backdrop-filter: blur(8px); border-bottom: 1px solid var(--borda); }
@@ -198,3 +205,4 @@ pre.json { background: var(--cartao); border: 1px solid var(--borda); border-rad
   .grade { grid-template-columns: 1fr; }
   .info { grid-template-columns: 1fr; }
 }
+[hidden] { display: none !important; }

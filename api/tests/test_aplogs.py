@@ -42,14 +42,77 @@ def test_painel_exige_login(client, ingest):
     assert client.get("/api/painel", headers={"x-api-secret": ingest["x-api-key"]}).status_code == 401
 
 
-def test_login_cookie(client):
-    assert client.post("/api/auth/login", json={"secret": "errada"}).status_code == 401
-    r = client.post("/api/auth/login", json={"secret": "senha-teste"})
-    assert r.status_code == 200 and "aplogs_sessao" in r.cookies
-    assert client.get("/api/auth/sessao").status_code == 200
-    client.post("/api/auth/logout")
+def test_login_central(client):
+    from conftest import apusers
+    apusers("/_mock/limpar", {})
     client.cookies.clear()
+    r = client.post("/api/auth/login", json={"email": "ana@exemplo.test", "senha": "errada"})
+    assert r.status_code == 401 and r.json()["codigo"] == "credenciais_invalidas"
+    assert isinstance(r.json()["error"], str)
+    r = client.post("/api/auth/login", json={"email": "Ana@Exemplo.test", "senha": "senha-ana"})
+    assert r.status_code == 200 and "aplogs_sessao" in r.cookies
+    assert r.json()["usuario"]["papel"] == "operador"
+    assert "ana@exemplo.test" not in r.cookies["aplogs_sessao"]          # o cookie leva só o id
+    assert "at-" not in r.cookies["aplogs_sessao"]
+    eu = client.get("/api/auth/sessao").json()
+    assert eu["usuario"]["permissoes"] == ["tratar", "ver"]
+    assert {p["role"] for p in eu["papeis"]} == {"visualizador", "operador", "gestor"}
+    assert apusers("/_mock/estado")["ips"][-1] == "testclient"            # IP de quem está no navegador
+    client.post("/api/auth/logout", headers={"X-Web": "1"})
+    assert apusers("/_mock/estado")["logouts"] == ["ana@exemplo.test"]
     assert client.get("/api/auth/sessao").status_code == 401
+    assert client.get("/api/painel").json()["codigo"] == "nao_autenticado"
+
+
+def test_login_sem_acesso_e_pendente(client):
+    client.cookies.clear()
+    r = client.post("/api/auth/login", json={"email": "bruno@exemplo.test", "senha": "senha-bruno"})
+    assert r.status_code == 403 and r.json()["codigo"] == "acesso_restrito" and r.json()["pedido"]["id"] == 7
+    r = client.post("/api/auth/login", json={"email": "paula@exemplo.test", "senha": "senha-paula"})
+    assert r.status_code == 403 and r.json()["codigo"] == "usuario_pendente"
+    r = client.post("/api/auth/cadastro", json={"email": "nova@exemplo.test", "nome": "Nova Pessoa",
+                                                "senha": "uma-senha-boa", "area": "Fiscal"})
+    assert r.status_code == 202 and r.json()["pending"] is True
+    from conftest import apusers
+    c = apusers("/_mock/estado")["cadastros"][-1]
+    assert c["email"] == "nova@exemplo.test" and c["area"] == "Fiscal" and c["ip"] == "testclient"
+
+
+def test_papeis_declarados(client):
+    from conftest import apusers
+    from app import acesso
+    acesso.declarar_papeis()             # roda numa thread ao subir; aqui, na mão
+    assert [p["role"] for p in apusers("/_mock/estado")["papeis"]] == ["visualizador", "operador", "gestor"]
+
+
+def test_token_vencido_renova_uma_vez(client):
+    from conftest import apusers, entrar
+    from app import acesso
+    entrar(client, "vera")
+    antes = apusers("/_mock/estado")["refresh_usados"]
+    apusers("/_mock/expirar", {"email": "vera@exemplo.test"})
+    acesso.cliente()._cache.clear()
+    assert client.get("/api/painel").status_code == 200
+    assert client.get("/api/painel").status_code == 200
+    assert apusers("/_mock/estado")["refresh_usados"] == antes + 1
+
+
+def test_acesso_revogado_derruba_sessao(client):
+    from conftest import apusers, entrar
+    from app import acesso
+    entrar(client, "gil")
+    apusers("/_mock/revogar", {"email": "gil@exemplo.test"})
+    acesso.cliente()._cache.clear()
+    r = client.get("/api/painel")
+    assert r.status_code == 403 and r.json()["codigo"] == "acesso_restrito"
+    assert client.get("/api/painel").json()["codigo"] == "nao_autenticado"     # a sessão foi descartada
+    apusers("/_mock/limpar", {})
+
+
+def test_secret_de_script(client, painel):
+    assert client.get("/api/auth/sessao", headers=painel).json()["script"] is True
+    r = client.get("/api/painel", headers={"x-api-secret": "errada"})
+    assert r.status_code == 401 and r.json()["codigo"] == "secret_invalido"
 
 
 def test_frontend_servido(client):
@@ -297,3 +360,70 @@ def test_repositorio_pelo_painel(client, ingest, painel):
     assert r.json()["servico"]["repositorio"] is None
     assert any(s["slug"] == "proj-c" and "repositorio" in s
                for s in client.get("/api/painel", headers=painel).json()["servicos"])
+
+
+# ── Login central: permissões por papel e atividade ──────────────────────────
+
+def test_permissoes_por_papel(client, ingest):
+    from conftest import apusers, entrar
+    import time as _t
+    apusers("/_mock/limpar", {})
+    client.post("/api/ingest/problemas", headers=ingest, json={
+        "servico": "robo-papeis", "problemas": [{"chave": "fila-parada", "titulo": "Fila parada", "severidade": "alta"}]})
+    client.post("/api/ingest/heartbeat", headers=ingest, json={"servico": "robo-papeis", "intervalo_s": 30})
+    W = {"X-Web": "1"}
+
+    entrar(client, "vera")                                          # visualizador: só vê
+    probs = client.get("/api/problemas?servico=robo-papeis").json()["problemas"]
+    pid = probs[0]["id"]
+    r = client.post(f"/api/problemas/{pid}/reconhecer", headers=W)
+    assert r.status_code == 403 and r.json()["codigo"] == "sem_permissao" and r.json()["papel"] == "visualizador"
+    assert client.patch("/api/servicos/robo-papeis", headers=W, json={"grupo": "x"}).status_code == 403
+
+    entrar(client, "ana")                                           # operador: trata problema
+    assert client.post(f"/api/problemas/{pid}/reconhecer").json()["codigo"] == "csrf"      # sem X-Web
+    assert client.post(f"/api/problemas/{pid}/reconhecer", headers=W).json()["problema"]["status"] == "reconhecido"
+    r = client.post(f"/api/problemas/{pid}/resolver", headers=W).json()
+    assert r["problema"]["resolvido_por"] == "Ana Operadora"
+    assert client.delete("/api/servicos/robo-papeis", headers=W).status_code == 403
+
+    entrar(client, "sem")                                           # sem papel = PAPEL_PADRAO (visualizador)
+    assert client.get("/api/auth/sessao").json()["usuario"]["papel"] == "visualizador"
+
+    entrar(client, "gil")                                           # gestor: edita e apaga serviço
+    assert client.patch("/api/servicos/robo-papeis", headers=W, json={"grupo": "Testes"}).json()["servico"]["grupo"] == "Testes"
+    assert client.delete("/api/servicos/robo-papeis", headers=W).json()["apagado"] == "robo-papeis"
+
+    from app import acesso
+    acesso.cliente().descarregar()
+    for _ in range(30):
+        acoes = [(e["user_id"], e["name"]) for e in apusers("/_mock/estado")["eventos"] if e["type"] == "acao"]
+        if len(acoes) >= 4:
+            break
+        _t.sleep(0.1)
+    assert acoes == [("u-ana", "problema_reconhecido"), ("u-ana", "problema_resolvido"),
+                     ("u-gil", "servico_editado"), ("u-gil", "servico_apagado")]
+
+
+def test_atividade_repassada(client, painel):
+    from conftest import apusers, entrar
+    from app import acesso
+    import time as _t
+    apusers("/_mock/limpar", {})
+    entrar(client, "vera")
+    r = client.post("/api/atividade", headers={"X-Web": "1"}, json={
+        "events": [{"type": "tela", "name": "Logs", "duration_ms": 61000, "metadata": {"user_id": "u-outro"}}],
+        "presence": {"screen": "Logs", "status": "ativo"}})
+    assert r.status_code == 200 and r.json()["recebidos"] == 1
+    acesso.cliente().descarregar()
+    for _ in range(30):
+        e = apusers("/_mock/estado")
+        if e["eventos"] and e["presencas"]:
+            break
+        _t.sleep(0.1)
+    ev = e["eventos"][0]
+    assert ev["user_id"] == "u-vera" and ev["name"] == "Logs" and ev["metadata"]["origem"] == "web"
+    assert e["presencas"][0]["user_id"] == "u-vera" and e["presencas"][0]["screen"] == "Logs"
+    r = client.post("/api/atividade", headers=painel, json={"events": []})
+    assert r.status_code == 403 and r.json()["codigo"] == "so_pessoas"
+    client.post("/api/auth/logout", headers={"X-Web": "1"})

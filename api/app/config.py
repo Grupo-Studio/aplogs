@@ -16,12 +16,21 @@ def _int(nome: str, padrao: int) -> int:
 
 
 # ── Segurança ────────────────────────────────────────────────────────────────
-# Senha do painel (tela de login). Também vale como header x-api-secret para ler a API por script.
+# Header x-api-secret para ler a API por SCRIPT (máquinas). Pessoas entram no painel pelo login central.
+# Também assina o cookie do painel.
 APLOGS_SECRET = os.getenv("APLOGS_SECRET", "").strip()
 # Chave que os serviços mandam no header x-api-key para enviar heartbeat, logs, etc.
 APLOGS_INGEST_KEY = os.getenv("APLOGS_INGEST_KEY", "").strip()
 # Quanto tempo o login do painel dura
 SESSAO_HORAS = _int("SESSAO_HORAS", 12)
+
+# ── Login central (apusers) ──────────────────────────────────────────────────
+# O painel pede o e-mail e a senha do apusers. A chave do serviço fica só aqui (o navegador nunca a vê).
+# Sem as duas, ninguém entra no painel (a ingestão e os scripts com x-api-secret seguem funcionando).
+APUSERS_URL  = os.getenv("APUSERS_URL", "").strip().rstrip("/")
+APUSERS_KEY  = os.getenv("APUSERS_KEY", "").strip()
+# Papel de quem tem acesso à aplogs sem papel definido no apusers (o mínimo: só ver)
+PAPEL_PADRAO = os.getenv("PAPEL_PADRAO", "visualizador").strip() or "visualizador"
 
 # ── Banco (MySQL) ────────────────────────────────────────────────────────────
 # DATABASE_URL substitui tudo (os testes usam sqlite). Sem ela, monta a URL do MySQL.

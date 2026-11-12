@@ -15,7 +15,15 @@ const estado = {
   probStatus: "abertos",
   gaveta: null,                // slug aberto na gaveta
   timers: [],
+  usuario: null,               // quem entrou (login central): {nome, email, papel, permissoes}
 };
+
+// Permissão vem do papel no apusers (a API confere de novo; aqui só esconde o que não pode)
+function pode(acao) { return !!estado.usuario && (estado.usuario.permissoes || []).includes(acao); }
+
+// Motivos que tiram a pessoa do painel (a sessão já foi descartada no servidor)
+const SAI_DO_PAINEL = ["nao_autenticado", "acesso_restrito", "usuario_inativo", "usuario_pendente", "servico_desativado",
+  "token_invalido", "sessao_invalida", "sessao_encerrada"];
 
 // ── Utilidades ──────────────────────────────────────────────────────────────
 
@@ -103,18 +111,25 @@ function toast(texto, cor = "var(--azul)") {
 }
 
 async function api(caminho, opcoes = {}) {
+  const headers = {};
+  if (opcoes.body) headers["Content-Type"] = "application/json";
+  if (opcoes.method && opcoes.method !== "GET") headers["X-Web"] = "1";       // proteção contra CSRF
   const r = await fetch(caminho, {
     credentials: "same-origin",
-    headers: opcoes.body ? { "Content-Type": "application/json" } : {},
     ...opcoes,
+    headers,
     body: opcoes.body ? JSON.stringify(opcoes.body) : undefined,
   });
-  if (r.status === 401 && !caminho.startsWith("/api/auth/login")) {
-    mostrarLogin();
-    throw new Error("sessão expirada");
-  }
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+  const publica = caminho.startsWith("/api/auth/login") || caminho.startsWith("/api/auth/cadastro");
+  if (!publica && (r.status === 401 || (r.status === 403 && SAI_DO_PAINEL.includes(j.codigo)))) {
+    mostrarLogin(r.status === 401 && j.codigo === "nao_autenticado" ? "" : j.error);
+    const e = new Error(j.error || "sessão expirada"); e.codigo = j.codigo; throw e;
+  }
+  if (!r.ok) {
+    const msg = Array.isArray(j.detalhes) ? `${j.error}: ${j.detalhes.join("; ")}` : (j.error || `HTTP ${r.status}`);
+    const e = new Error(msg); e.codigo = j.codigo; e.status = r.status; e.dados = j; throw e;
+  }
   return j;
 }
 
@@ -127,19 +142,44 @@ function qs(params) {
 
 // ── Login ───────────────────────────────────────────────────────────────────
 
-function mostrarLogin() {
+function mostrarLogin(mensagem) {
+  if (estado.usuario) atividade.sair(false);
+  estado.usuario = null;
   pararTimers();
   $("#tela-app").hidden = true;
   $("#tela-login").hidden = false;
+  trocarLogin("entrar");
   fecharGaveta();
-  setTimeout(() => $("#senha").focus(), 50);
+  const erro = $("#login-erro");
+  erro.textContent = mensagem || "";
+  erro.hidden = !mensagem;
+  try { $("#email").value = $("#email").value || localStorage.getItem("aplogs_email") || ""; } catch { /* sem storage */ }
+  setTimeout(() => ($("#email").value ? $("#senha") : $("#email")).focus(), 50);
 }
 
-function mostrarApp() {
+function mostrarApp(usuario) {
+  estado.usuario = usuario;
+  try { localStorage.setItem("aplogs_email", usuario.email); } catch { /* sem storage */ }
+  const papel = usuario.papel ? `<span class="papel">${esc(usuario.papel)}</span>` : "";
+  $("#quem").innerHTML = `<b>${esc(usuario.nome)}</b>${papel}`;
+  $("#quem").title = usuario.email;
+  // quem entra começa em Serviços (a aba anterior pode ter sido de outra pessoa)
+  estado.aba = "servicos";
+  $$(".abas button").forEach(b => b.classList.toggle("ativa", b.dataset.aba === "servicos"));
+  $$(".aba").forEach(s => { s.hidden = s.id !== "aba-servicos"; });
   $("#tela-login").hidden = true;
   $("#tela-app").hidden = false;
   iniciarTimers();
+  atividade.entrou();
 }
+
+function trocarLogin(qual) {
+  $("#form-login").hidden = qual !== "entrar";
+  $("#form-cadastro").hidden = qual !== "cadastro";
+}
+
+$("#ir-cadastro").addEventListener("click", e => { e.preventDefault(); trocarLogin("cadastro"); $("#form-cadastro").nome.focus(); });
+$("#ir-login").addEventListener("click", e => { e.preventDefault(); trocarLogin("entrar"); });
 
 $("#form-login").addEventListener("submit", async e => {
   e.preventDefault();
@@ -148,9 +188,33 @@ $("#form-login").addEventListener("submit", async e => {
   botao.disabled = true;
   erro.hidden = true;
   try {
-    await api("/api/auth/login", { method: "POST", body: { secret: $("#senha").value } });
+    const r = await api("/api/auth/login", { method: "POST", body: { email: $("#email").value, senha: $("#senha").value } });
     $("#senha").value = "";
-    mostrarApp();
+    mostrarApp(r.usuario);
+  } catch (err) {
+    $("#senha").value = "";
+    erro.textContent = err.codigo === "acesso_restrito" && err.dados?.pedido
+      ? "Você ainda não tem acesso à aplogs. O pedido foi enviado ao administrador do apusers."
+      : err.message;
+    erro.hidden = false;
+  } finally {
+    botao.disabled = false;
+  }
+});
+
+$("#form-cadastro").addEventListener("submit", async e => {
+  e.preventDefault();
+  const f = e.target, erro = $("#cadastro-erro"), ok = $("#cadastro-ok"), botao = f.querySelector("button");
+  erro.hidden = ok.hidden = true;
+  if (f.senha.value !== f.confirmar.value) { erro.textContent = "As senhas não conferem."; erro.hidden = false; return; }
+  botao.disabled = true;
+  try {
+    const r = await api("/api/auth/cadastro", { method: "POST", body: {
+      nome: f.nome.value.trim(), email: f.email.value.trim(), senha: f.senha.value,
+      area: f.area.value.trim() || null, justificativa: f.justificativa.value.trim() || null } });
+    f.reset();
+    ok.textContent = r.message || "Cadastro enviado. Você entra quando o administrador aprovar.";
+    ok.hidden = false;
   } catch (err) {
     erro.textContent = err.message;
     erro.hidden = false;
@@ -160,9 +224,72 @@ $("#form-login").addEventListener("submit", async e => {
 });
 
 $("#sair").addEventListener("click", async () => {
-  await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+  atividade.sair(true);
+  estado.usuario = null;
+  await fetch("/api/auth/logout", { method: "POST", headers: { "X-Web": "1" } }).catch(() => {});
   mostrarLogin();
 });
+
+// ── Tempo de tela e presença ────────────────────────────────────────────────
+// A aba aberta é a "tela". A aplogs repassa ao apusers (POST /api/atividade, formato do apusers).
+// Parado há 5 min (sem mouse/teclado) ou com a aba do navegador escondida: o tempo para de contar.
+// Trechos longos são cortados a cada 5 min (não se perde muito se o navegador fechar de repente).
+
+const NOME_ABA = { servicos: "Serviços", logs: "Logs", problemas: "Problemas", jobs: "Jobs", filas: "Filas" };
+
+const atividade = (() => {
+  const OCIOSO_MS = 5 * 60 * 1000, CORTE_MS = 5 * 60 * 1000, ENVIO_MS = 60 * 1000;
+  const A = { tela: null, inicio: null, fila: [], ultimoInput: Date.now(), ocioso: false };
+  const ligado = () => !!estado.usuario;
+
+  function fechar(fim) {
+    if (!A.tela || !A.inicio) return;
+    fim = fim || new Date();
+    const ms = fim - A.inicio;
+    if (ms >= 1000) A.fila.push({ type: "tela", name: A.tela, started_at: A.inicio.toISOString(),
+      ended_at: fim.toISOString(), duration_ms: ms, metadata: { app: "aplogs" } });
+    A.inicio = null;
+  }
+  function abrir(nome) {
+    fechar();
+    A.tela = nome;
+    if (ligado() && !document.hidden && !A.ocioso) A.inicio = new Date();
+  }
+  async function enviar(status, keepalive = false) {
+    if (!ligado()) return;
+    const events = A.fila.splice(0, 500);
+    const corpo = JSON.stringify({ events, presence: status ? { screen: A.tela, status } : undefined });
+    try {
+      const r = await fetch("/api/atividade", { method: "POST", keepalive, credentials: "same-origin",
+        headers: { "Content-Type": "application/json", "X-Web": "1" }, body: corpo });
+      if (!r.ok && r.status !== 401 && r.status !== 403) throw new Error(r.status);
+    } catch { if (!keepalive) { A.fila.unshift(...events); A.fila.splice(2000); } }
+  }
+  function input() {
+    A.ultimoInput = Date.now();
+    if (A.ocioso && ligado()) { A.ocioso = false; abrir(A.tela); enviar("ativo"); }
+  }
+  ["mousemove", "keydown", "click", "scroll", "touchstart"].forEach(t => document.addEventListener(t, input, { passive: true }));
+  setInterval(() => {
+    if (!ligado()) return;
+    const agora = Date.now();
+    if (!A.ocioso && agora - A.ultimoInput > OCIOSO_MS) { fechar(new Date(A.ultimoInput)); A.ocioso = true; }
+    else if (A.inicio && agora - A.inicio > CORTE_MS) abrir(A.tela);
+    enviar(document.hidden || A.ocioso ? "ocioso" : "ativo");
+  }, ENVIO_MS);
+  document.addEventListener("visibilitychange", () => {
+    if (!ligado()) return;
+    if (document.hidden) { fechar(); enviar("ocioso"); } else { input(); abrir(A.tela); enviar("ativo"); }
+  });
+  window.addEventListener("pagehide", () => { if (ligado()) { fechar(); enviar("ocioso", true); } });
+
+  return {
+    tela(aba) { abrir(NOME_ABA[aba] || aba); },
+    entrou() { A.ocioso = false; A.ultimoInput = Date.now(); abrir(NOME_ABA[estado.aba] || estado.aba); enviar("ativo"); },
+    // avisar=true: ainda dá tempo de mandar (antes do logout); false: a sessão já caiu, só descarta
+    sair(avisar) { fechar(); if (avisar) enviar("saiu", true); else A.fila.length = 0; A.tela = A.inicio = null; },
+  };
+})();
 
 // ── Timers ──────────────────────────────────────────────────────────────────
 
@@ -183,6 +310,7 @@ function iniciarTimers() {
 $$(".abas button").forEach(b => b.addEventListener("click", () => irPara(b.dataset.aba)));
 
 function irPara(aba, filtros = {}) {
+  if (estado.aba !== aba) atividade.tela(aba);
   estado.aba = aba;
   $$(".abas button").forEach(b => b.classList.toggle("ativa", b.dataset.aba === aba));
   $$(".aba").forEach(s => { s.hidden = s.id !== `aba-${aba}`; });
@@ -192,7 +320,7 @@ function irPara(aba, filtros = {}) {
 
 function atualizarAba(reset) {
   const f = { servicos: () => {}, logs: () => carregarLogs(reset), problemas: carregarProblemas, jobs: carregarJobs, filas: carregarFilas }[estado.aba];
-  if (f) f().catch?.(() => {});
+  if (f) Promise.resolve(f()).catch(() => {});
 }
 
 // ── Painel (visão geral) ────────────────────────────────────────────────────
@@ -416,8 +544,8 @@ function cardProblema(p) {
       </div>
     </div>
     <div class="acoes">
-      ${p.status === "aberto" ? `<button class="fantasma" data-acao="reconhecer" data-id="${p.id}">Reconhecer</button>` : ""}
-      ${!resolvido ? `<button class="fantasma" data-acao="resolver" data-id="${p.id}">Resolver</button>` : ""}
+      ${p.status === "aberto" && pode("tratar") ? `<button class="fantasma" data-acao="reconhecer" data-id="${p.id}">Reconhecer</button>` : ""}
+      ${!resolvido && pode("tratar") ? `<button class="fantasma" data-acao="resolver" data-id="${p.id}">Resolver</button>` : ""}
     </div>
   </div>`;
 }
@@ -570,7 +698,9 @@ async function atualizarGaveta(completo = false) {
     ${s.dados ? `<h5>Dados do último heartbeat</h5><pre class="json">${esc(JSON.stringify(s.dados, null, 2))}</pre>` : ""}
 
     <h5>Configuração</h5>
+    ${pode("gerenciar") ? "" : `<p class="so-leitura">Só leitura: editar e apagar serviços é do papel gestor no apusers.</p>`}
     <form class="form-ed" id="g-form">
+      <fieldset style="all:unset;display:contents" ${pode("gerenciar") ? "" : "disabled"}>
       <label>Nome<input name="nome" value="${esc(s.nome)}" maxlength="160"></label>
       <label>Descrição<textarea name="descricao" rows="2">${esc(s.descricao || "")}</textarea></label>
       <label>Grupo (agrupa os cards)<input name="grupo" value="${esc(s.grupo || "")}" maxlength="80" placeholder="ex.: Receita, RPA, APIs"></label>
@@ -578,11 +708,12 @@ async function atualizarGaveta(completo = false) {
       <label>Tolerância sem heartbeat, em segundos (vazio = automática: ${Math.max(3 * s.intervalo_s, 60)} s)
         <input name="tolerancia_s" type="number" min="0" value="${s.tolerancia_s ?? ""}"></label>
       <label class="chave"><input name="monitorar" type="checkbox" ${s.monitorar ? "checked" : ""}> Monitorar (desligado = sem alerta de offline)</label>
-      <div class="linha">
+      <div class="linha" ${pode("gerenciar") ? "" : "hidden"}>
         <button class="botao" type="submit">Salvar</button>
         <span style="flex:1"></span>
         <button class="fantasma perigo" type="button" id="g-apagar">Apagar serviço</button>
       </div>
+      </fieldset>
     </form>`;
   if (!completo) $("#gaveta").scrollTop = rolagem;
 
@@ -618,9 +749,10 @@ async function atualizarGaveta(completo = false) {
 
 (async () => {
   try {
-    await api("/api/auth/sessao");
-    mostrarApp();
-  } catch {
-    mostrarLogin();
+    const r = await api("/api/auth/sessao");
+    if (!r.usuario) throw new Error("sem usuário");
+    mostrarApp(r.usuario);
+  } catch (err) {
+    if ($("#tela-login").hidden) mostrarLogin(err.status === 503 ? err.message : "");
   }
 })();

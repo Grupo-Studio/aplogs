@@ -2,7 +2,7 @@
 
 Central de **logs e monitoramento** dos serviços e robôs do grupo. Cada serviço manda para cá
 heartbeat, status, logs, problemas, jobs e filas; o painel (porta **3070**, acessível pela rede)
-mostra tudo junto, com login por senha.
+mostra tudo junto, com o login central do grupo (**apusers**).
 
 O primeiro serviço conectado é a **aplogin** (branch Receita), que aparece como
 **RPA Procurações Eletrônicas**.
@@ -11,7 +11,7 @@ O primeiro serviço conectado é a **aplogin** (branch Receita), que aparece com
  aplogin (RPA Procurações) ─┐
  robô X ────────────────────┼──►  aplogs API :3070  ──►  MySQL (container local)
  robô Y ────────────────────┘          │
-                                       └──►  painel web  (http://<ip>:3070, senha)
+                                       └──►  painel web  (http://<ip>:3070) ──► login: apusers
 ```
 
 ## O que tem
@@ -31,6 +31,34 @@ repositório do GitHub, mudar a tolerância, pausar o monitoramento ou apagar um
 
 Atualizar a aplogs não perde dados: no arranque ela cria sozinha as colunas novas no banco que já existe.
 
+## Login do painel (apusers)
+
+O painel entra com o usuário do **apusers**, o login central do grupo. A tela de entrada é da própria aplogs;
+quem confere e-mail, senha, acesso e papel é o apusers. A chave do serviço (`APUSERS_KEY`) fica só no
+servidor: o navegador nunca fala com o apusers.
+
+- **Sessão:** fica na tabela `web_sessoes`; o cookie (`aplogs_sessao`, HttpOnly, SameSite=Strict) leva só um
+  id assinado. Os tokens do apusers nunca chegam ao navegador. Duas abas renovando o token juntas não derrubam a
+  sessão.
+- **Papéis** (declarados no apusers quando a aplogs sobe; o administrador escolhe o de cada pessoa). Quem tem
+  acesso sem papel fica com `PAPEL_PADRAO` (`visualizador`).
+
+  | | visualizador | operador | gestor |
+  |---|:-:|:-:|:-:|
+  | Ver serviços, logs, problemas, jobs e filas | ✓ | ✓ | ✓ |
+  | Reconhecer / resolver problemas | | ✓ | ✓ |
+  | Editar (nome, grupo, repositório, monitoramento) e apagar serviços | | | ✓ |
+
+  O que o papel não permite some da tela, e a API confere de novo (403 `sem_permissao`). Tirar o acesso,
+  desativar a pessoa ou trocar o papel no apusers vale em até 30 s.
+- **Sem acesso ainda?** Entrar gera um pedido para o administrador do apusers. *Criar conta* cria a conta
+  pendente; aprovada, já vem com acesso à aplogs.
+- **Atividade:** reconhecer/resolver problema e editar/apagar serviço são registrados no apusers (com quem
+  fez). O tempo em cada aba (Serviços, Logs, Problemas, Jobs, Filas) e a presença vão para o apusers pelo
+  `POST /api/atividade`. Parado 5 min, o tempo para de contar. Quem resolve um problema aparece no próprio problema.
+- **apusers fora do ar:** entrar no painel responde 503 (`login_central_fora`). A ingestão dos serviços, o
+  monitor de heartbeat e os scripts com `x-api-secret` seguem funcionando.
+
 ## Subir
 
 ```bash
@@ -39,9 +67,14 @@ cp .env.example .env
 
 Troque **todas** as senhas no `.env`:
 
-- `APLOGS_SECRET`: senha do painel.
+- `APLOGS_SECRET`: segredo dos scripts (header `x-api-secret`) e da assinatura do cookie do painel. Pessoas não usam.
 - `APLOGS_INGEST_KEY`: chave que os serviços usam para enviar dados. Quem tem só ela consegue enviar, mas não ler.
 - `DB_PASSWORD` / `DB_ROOT_PASSWORD`: senhas do MySQL.
+
+E ligue o login central: no painel do apusers, *Serviços → Cadastrar* com o slug `aplogs` (o apusers mostra a
+chave uma vez) e preencha `APUSERS_URL` e `APUSERS_KEY`. Mesma máquina do apusers:
+`APUSERS_URL=http://host.docker.internal:3080`. Depois de subir, dê acesso à `aplogs` para as pessoas no apusers
+e escolha o papel de cada uma.
 
 ```bash
 docker compose up -d --build
@@ -100,7 +133,8 @@ Depois, `docker compose up -d --build` na aplogin. Detalhes do que ela envia: se
 
 ## API de leitura
 
-O painel usa estas rotas, que também aceitam o header `x-api-secret: <APLOGS_SECRET>` (para scripts).
+O painel usa estas rotas (pessoa logada, conforme o papel), que também aceitam o header
+`x-api-secret: <APLOGS_SECRET>` (scripts: podem tudo). Pelo navegador, o que muda dado exige o header `X-Web: 1`.
 Documentação interativa em `/api/docs`.
 
 | Método | Rota | |
@@ -115,25 +149,38 @@ Documentação interativa em `/api/docs`.
 | GET | `/api/filas` | Filas + amostras da última hora |
 | GET | `/api/heartbeats` | `?servico=&limite=` |
 
+Entrada do painel:
+
+| Método | Rota | |
+|---|---|---|
+| POST | `/api/auth/login` | `{"email", "senha"}` do apusers → cookie |
+| POST | `/api/auth/logout` | Encerra a sessão (aqui e no apusers) |
+| GET | `/api/auth/sessao` | Quem está logado, papel e permissões |
+| POST | `/api/auth/cadastro` | Conta nova no apusers (pendente até o administrador aprovar) |
+| POST | `/api/atividade` | Tempo de tela e presença (formato do apusers) |
+
 ## Desenvolvimento e testes
 
 ```bash
 cd api
 pip install -r requirements.txt pytest httpx
-python -m pytest tests -q                       # sqlite
+python -m pytest tests -q                       # sqlite + réplica do apusers (tests/mock_apusers.py)
 TEST_DATABASE_URL="mysql+pymysql://usuario:senha@127.0.0.1:3307/aplogs_teste?charset=utf8mb4" \
   python -m pytest tests -q                     # MySQL de verdade (banco vazio só para teste)
 ```
 
-Rodar fora do Docker: `DATABASE_URL=sqlite:///aplogs.db APLOGS_SECRET=x APLOGS_INGEST_KEY=y uvicorn app.main:app --port 3070`.
+Rodar fora do Docker: `DATABASE_URL=sqlite:///aplogs.db APLOGS_SECRET=x APLOGS_INGEST_KEY=y APUSERS_URL=http://127.0.0.1:3080 APUSERS_KEY=aps_... uvicorn app.main:app --port 3070`.
 
 ## Estrutura
 
 ```
 api/app/
-  main.py        app, login do painel, arquivos do frontend
+  main.py        app, entrada do painel (login central), arquivos do frontend
+  auth.py        sessões do painel, exigir(ação), x-api-secret e chave de ingestão
+  acesso.py      login central (apusers): papéis, permissões e atividade
+  apusers_client.py  cliente do apusers (copiado de Grupo-Studio/apusers)
   ingestao.py    POST /api/ingest/*  (serviços → aplogs)
-  painel.py      rotas de leitura do painel
+  painel.py      rotas do painel (cada uma com a permissão que exige)
   monitor.py     monitor de heartbeat (offline) + limpeza por retenção
   servicos.py    regras: cadastro, status, problemas
   modelos.py     tabelas (SQLAlchemy)

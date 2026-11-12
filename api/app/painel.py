@@ -1,7 +1,12 @@
 """
 painel.py
 =========
-Rotas de leitura do painel (cookie de login ou header x-api-secret).
+Rotas do painel (cookie do login central ou header x-api-secret).
+
+Permissões (papel da pessoa no apusers; scripts com x-api-secret podem tudo):
+  ver        todas as leituras                        visualizador, operador, gestor
+  tratar     reconhecer / resolver problema           operador, gestor
+  gerenciar  editar / apagar serviço                  gestor
 
   GET    /api/painel                      visão geral: serviços, status, linha do tempo de heartbeat, totais
   GET    /api/servicos/{slug}             detalhe de um serviço
@@ -25,7 +30,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session
 
-from . import auth
+from . import acesso, auth
 from . import servicos as sv
 from .db import agora, get_db, iso
 from .modelos import Fila, FilaAmostra, Heartbeat, Job, Log, Problema, Servico
@@ -192,7 +197,7 @@ class ServicoEdit(BaseModel):
 
 
 @router.patch("/servicos/{slug}")
-def editar_servico(slug: str, corpo: ServicoEdit, db: Session = Depends(get_db)):
+def editar_servico(slug: str, corpo: ServicoEdit, db: Session = Depends(get_db), ator=Depends(auth.exigir("gerenciar"))):
     s = _servico(db, slug)
     dados = corpo.model_dump(exclude_unset=True)
     if "nome" in dados and dados["nome"]:
@@ -212,11 +217,12 @@ def editar_servico(slug: str, corpo: ServicoEdit, db: Session = Depends(get_db))
         s.monitorar = dados["monitorar"]
     sv.aplicar_status(db, s)
     db.commit()
+    acesso.registrar_acao(ator, "servico_editado", s.slug, campos=sorted(dados))
     return {"ok": True, "servico": servico_json(s)}
 
 
 @router.delete("/servicos/{slug}")
-def apagar_servico(slug: str, db: Session = Depends(get_db)):
+def apagar_servico(slug: str, db: Session = Depends(get_db), ator=Depends(auth.exigir("gerenciar"))):
     """Apaga o serviço e todos os dados dele. Se ele continuar mandando dados, é cadastrado de novo."""
     s = _servico(db, slug)
     filas = select(Fila.id).where(Fila.servico_id == s.id)
@@ -225,6 +231,7 @@ def apagar_servico(slug: str, db: Session = Depends(get_db)):
         db.execute(delete(modelo).where(modelo.servico_id == s.id))
     db.delete(s)
     db.commit()
+    acesso.registrar_acao(ator, "servico_apagado", slug)
     return {"ok": True, "apagado": slug}
 
 
@@ -292,21 +299,27 @@ def _problema(db: Session, pid: int) -> Problema:
     return p
 
 
+def _quem(ator) -> str:
+    return "painel" if ator is auth.SCRIPT else ator.nome[:80]
+
+
 @router.post("/problemas/{pid}/reconhecer")
-def reconhecer(pid: int, db: Session = Depends(get_db)):
+def reconhecer(pid: int, db: Session = Depends(get_db), ator=Depends(auth.exigir("tratar"))):
     p = _problema(db, pid)
     if p.status == "aberto":
         p.status = "reconhecido"
         db.commit()
+        acesso.registrar_acao(ator, "problema_reconhecido", p.titulo[:200], problema=p.id, severidade=p.severidade)
     return {"ok": True, "problema": problema_json(p)}
 
 
 @router.post("/problemas/{pid}/resolver")
-def resolver(pid: int, db: Session = Depends(get_db)):
+def resolver(pid: int, db: Session = Depends(get_db), ator=Depends(auth.exigir("tratar"))):
     p = _problema(db, pid)
     if p.status != "resolvido":
-        p.status, p.resolvido_em, p.resolvido_por = "resolvido", agora(), "painel"
+        p.status, p.resolvido_em, p.resolvido_por = "resolvido", agora(), _quem(ator)
         db.commit()
+        acesso.registrar_acao(ator, "problema_resolvido", p.titulo[:200], problema=p.id, severidade=p.severidade)
     return {"ok": True, "problema": problema_json(p)}
 
 

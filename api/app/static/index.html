@@ -11,12 +11,28 @@
 
 <!-- ── Login ──────────────────────────────────────────────────────────── -->
 <main id="tela-login" class="login" hidden>
-  <form id="form-login" class="login-card" autocomplete="off">
+  <form id="form-login" class="login-card" autocomplete="on">
     <div class="marca grande"><span class="pulso"></span>aplogs</div>
-    <p class="sub">Logs e monitoramento dos serviços</p>
-    <input id="senha" type="password" placeholder="Senha" autofocus required>
+    <p class="sub">Entre com o seu usuário do login central do grupo</p>
+    <input id="email" type="email" placeholder="E-mail" autocomplete="username" maxlength="191" required>
+    <input id="senha" type="password" placeholder="Senha" autocomplete="current-password" required>
     <button type="submit">Entrar</button>
     <p id="login-erro" class="erro" hidden></p>
+    <a class="troca" id="ir-cadastro" href="#">Não tem conta? Criar conta</a>
+  </form>
+  <form id="form-cadastro" class="login-card" autocomplete="on" hidden>
+    <div class="marca grande"><span class="pulso"></span>aplogs</div>
+    <p class="sub">O administrador aprova antes do primeiro acesso. Aprovada, a conta já vem com acesso à aplogs.</p>
+    <input name="nome" placeholder="Nome completo" autocomplete="name" minlength="2" maxlength="160" required>
+    <input name="email" type="email" placeholder="E-mail" autocomplete="username" maxlength="191" required>
+    <input name="area" placeholder="Área / setor (opcional)" maxlength="120">
+    <input name="senha" type="password" placeholder="Senha (mínimo 8)" autocomplete="new-password" minlength="8" required>
+    <input name="confirmar" type="password" placeholder="Repita a senha" autocomplete="new-password" required>
+    <textarea name="justificativa" rows="2" maxlength="1000" placeholder="Para que você precisa de acesso? (opcional)"></textarea>
+    <button type="submit">Enviar cadastro</button>
+    <p id="cadastro-erro" class="erro" hidden></p>
+    <p id="cadastro-ok" class="ok" hidden></p>
+    <a class="troca" id="ir-login" href="#">Voltar ao login</a>
   </form>
 </main>
 
@@ -27,6 +43,7 @@
     <div id="resumo" class="resumo"></div>
     <div class="topo-dir">
       <span id="atualizado" class="mudo"></span>
+      <span id="quem" class="quem"></span>
       <button id="sair" class="fantasma">Sair</button>
     </div>
   </header>
