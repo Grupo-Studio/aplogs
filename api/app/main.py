@@ -29,7 +29,7 @@ from . import acesso, auth, config, db, ingestao, integracao, monitor, painel
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(name)s | %(message)s")
 logger = logging.getLogger("aplogs")
 
-VERSAO = "1.2.0"
+VERSAO = "1.2.1"
 ESTATICO = Path(__file__).parent / "static"
 
 

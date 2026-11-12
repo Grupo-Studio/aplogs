@@ -161,14 +161,15 @@ function mostrarLogin(mensagem) {
 function mostrarApp(usuario) {
   estado.usuario = usuario;
   try { localStorage.setItem("aplogs_email", usuario.email); } catch { /* sem storage */ }
-  const papel = usuario.papel ? `<span class="papel">${esc(usuario.papel)}</span>` : "";
+  const papel = usuario.papel
+    ? `<span class="papel" title="${usuario.admin ? "Administrador do apusers: vale como gestor" : "Papel na aplogs (definido no apusers)"}">${esc(usuario.papel)}${usuario.admin ? " · admin" : ""}</span>` : "";
   $("#quem").innerHTML = `<b>${esc(usuario.nome)}</b>${papel}`;
   $("#quem").title = usuario.email;
   // quem entra começa em Serviços (a aba anterior pode ter sido de outra pessoa)
   estado.aba = "servicos";
   $$(".abas button").forEach(b => b.classList.toggle("ativa", b.dataset.aba === "servicos"));
   $$(".aba").forEach(s => { s.hidden = s.id !== "aba-servicos"; });
-  $("#servicos-barra").hidden = !pode("gerenciar");
+  $("#abrir-integracao").classList.toggle("bloqueado", !pode("gerenciar"));
   $("#tela-login").hidden = true;
   $("#tela-app").hidden = false;
   iniciarTimers();
@@ -668,7 +669,9 @@ async function atualizarGaveta(completo = false) {
   $("#gaveta").innerHTML = `
     <div class="gaveta-topo">
       <div><h2>${esc(s.nome)}</h2><div class="slug mono fraco">${esc(s.slug)}</div></div>
-      <div style="display:flex;gap:8px;align-items:center">${pilula(s.status)}<button class="fantasma" id="g-fechar">✕</button></div>
+      <div style="display:flex;gap:8px;align-items:center">${pilula(s.status)}
+        ${pode("gerenciar") ? `<button class="fantasma perigo" id="g-excluir" title="Apagar este serviço e todos os dados dele">🗑 Excluir</button>` : ""}
+        <button class="fantasma" id="g-fechar">✕</button></div>
     </div>
     ${s.descricao ? `<p class="mudo">${esc(s.descricao)}</p>` : ""}
     ${linhaTempo(s.timeline)}
@@ -740,14 +743,23 @@ async function atualizarGaveta(completo = false) {
     } catch (err) { toast(esc(err.message), "var(--vermelho)"); }
   };
   $("#g-integracao").onclick = () => abrirIntegracao(s);
-  $("#g-apagar").onclick = async () => {
-    if (!confirm(`Apagar "${s.nome}" e todos os logs, jobs e problemas dele?\n\nSe o serviço continuar mandando dados, ele aparece de novo.`)) return;
-    try {
-      await api(`/api/servicos/${encodeURIComponent(s.slug)}`, { method: "DELETE" });
-      fecharGaveta();
-      atualizarPainel();
-    } catch (err) { toast(esc(err.message), "var(--vermelho)"); }
-  };
+  $("#g-apagar").onclick = () => excluirServico(s);
+  const bx = $("#g-excluir"); if (bx) bx.onclick = () => excluirServico(s);
+}
+
+async function excluirServico(s) {
+  const vivo = ["online", "degradado"].includes(s.status);
+  const aviso = vivo
+    ? `\n\nATENÇÃO: "${s.nome}" está ${NOMES_STATUS[s.status].toLowerCase()} e continua mandando dados: ele volta a aparecer no próximo heartbeat. ` +
+      `Desligue o serviço (ou tire o APLOGS_* do .env dele) antes, ou use "Monitorar" desligado para só silenciar.`
+    : "\n\nSe o serviço voltar a mandar dados, ele aparece de novo.";
+  if (!confirm(`Excluir "${s.nome}" (${s.slug}) e todos os logs, jobs, filas e problemas dele?\n\nNão dá para desfazer.${aviso}`)) return;
+  try {
+    await api(`/api/servicos/${encodeURIComponent(s.slug)}`, { method: "DELETE" });
+    toast(`"${esc(s.nome)}" excluído.`, "var(--verde)");
+    fecharGaveta();
+    atualizarPainel();
+  } catch (err) { toast(esc(err.message), "var(--vermelho)"); }
 }
 
 // ── Gerenciar integração ────────────────────────────────────────────────────
@@ -775,7 +787,14 @@ function baixarTexto(nome, texto) {
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
-$("#abrir-integracao").addEventListener("click", () => abrirIntegracao());
+$("#abrir-integracao").addEventListener("click", () => {
+  if (!pode("gerenciar")) {
+    toast(`Gerar a integração é do papel <b>gestor</b> (o .env leva a chave de envio). Seu papel: ${esc(estado.usuario?.papel || "—")}. ` +
+      "Peça ao administrador do apusers.", "var(--amarelo)");
+    return;
+  }
+  abrirIntegracao();
+});
 
 async function abrirIntegracao(s = null) {
   estado.gaveta = null;

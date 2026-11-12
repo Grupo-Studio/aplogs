@@ -8,6 +8,7 @@ O navegador NUNCA fala com o apusers: a chave do serviço (APUSERS_KEY) fica só
     desativar a pessoa ou trocar o papel vale em até 30 s.
   - Permissões: por papel. A aplogs declara os papéis no apusers ao subir (PAPEIS); o administrador
     escolhe o papel de cada pessoa no painel do apusers. Sem papel = PAPEL_PADRAO (só ver).
+    Administrador do apusers (is_admin) é sempre gestor aqui: ele já pode se dar qualquer papel lá.
   - Atividade: ações (tratar problema, editar/apagar serviço) registradas AQUI, na rota; tempo de tela e
     presença a página manda em POST /api/atividade (formato do apusers) e a aplogs repassa.
   - apusers fora do ar: entrar no painel responde 503; a ingestão dos serviços e o monitor seguem.
@@ -35,6 +36,7 @@ PAPEIS = [
     {"role": "gestor", "description": "Também edita (nome, grupo, repositório, monitoramento) e apaga serviços"},
 ]
 NOMES_PAPEIS = {p["role"] for p in PAPEIS}
+PAPEL_ADMIN = "gestor"           # papel de quem é administrador do apusers (is_admin)
 
 # Ação → papéis que podem. Scripts (x-api-secret) podem tudo.
 PERMISSOES = {
@@ -103,6 +105,7 @@ class Usuario:
     email: str
     nome: str
     papel: str
+    admin: bool = False          # administrador do apusers (vale como gestor)
     origem: str = "web"
 
     def pode(self, acao: str) -> bool:
@@ -117,14 +120,18 @@ class Usuario:
         return f"{self.nome} <{self.email}>"
 
     def publico(self) -> dict:
-        return {"id": self.id, "email": self.email, "nome": self.nome, "papel": self.papel,
+        return {"id": self.id, "email": self.email, "nome": self.nome, "papel": self.papel, "admin": self.admin,
                 "permissoes": self.permissoes}
 
 
 def _usuario(user: dict, access: dict | None) -> Usuario:
     role = (access or {}).get("role")
-    return Usuario(id=user["id"], email=user["email"], nome=user.get("name") or user["email"],
-                   papel=role if role in NOMES_PAPEIS else config.PAPEL_PADRAO)
+    admin = bool(user.get("is_admin"))
+    if admin:
+        papel = PAPEL_ADMIN
+    else:
+        papel = role if role in NOMES_PAPEIS else config.PAPEL_PADRAO
+    return Usuario(id=user["id"], email=user["email"], nome=user.get("name") or user["email"], papel=papel, admin=admin)
 
 
 def usuario_do_token(token: str) -> Usuario:
