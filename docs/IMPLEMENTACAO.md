@@ -4,7 +4,7 @@ Como a aplogs funciona por dentro: arquitetura, módulos, banco, autenticação,
 fundo, painel e testes. Para **subir e operar**, veja o [README](../README.md); para **conectar um serviço**,
 veja [INTEGRACAO.md](INTEGRACAO.md).
 
-Versão descrita: **1.1.0** (`VERSAO` em `api/app/main.py`).
+Versão descrita: **1.2.0** (`VERSAO` em `api/app/main.py`).
 
 ---
 
@@ -65,6 +65,7 @@ api/app/
   ingestao.py        POST /api/ingest/*  (serviços → aplogs)
   servicos.py        regras de negócio: normalização, cadastro, cálculo/transição de status, problemas
   painel.py          rotas de leitura e gestão do painel
+  integracao.py      "Gerenciar integração": cadastra o serviço e gera o .env e o .txt de instruções
   monitor.py         tarefas de fundo: rodada de status e limpeza por retenção
   static/            index.html, style.css, app.js (JS puro)
 api/tests/           pytest + réplica do apusers (mock_apusers.py)
@@ -77,6 +78,7 @@ Dependência entre módulos (sem ciclos):
 main ─► ingestao ─► servicos ─► modelos ─► db ─► config
   │        └──────► auth ─► acesso ─► apusers_client
   ├──► painel ─► auth, acesso, servicos
+  ├──► integracao ─► painel (servico_json), auth, acesso, servicos
   └──► monitor ─► servicos
 ```
 
@@ -155,6 +157,7 @@ tipo exigem script manual.
 | `APLOGS_SECRET` | — (obrigatória) | Header `x-api-secret` dos scripts e chave HMAC do cookie. Trocar derruba todos os logins. |
 | `APLOGS_INGEST_KEY` | — (obrigatória) | Chave de envio dos serviços. Só envia, não lê. |
 | `SESSAO_HORAS` | 12 | Validade da sessão do painel. |
+| `APLOGS_URL_PUBLICA` | vazio | Endereço que vai no `.env` gerado por "Gerenciar integração". Vazio = `scheme://Host` da requisição. |
 | `APUSERS_URL`, `APUSERS_KEY` | vazio | Login central. Sem as duas, ninguém entra no painel (ingestão e scripts seguem). |
 | `PAPEL_PADRAO` | `visualizador` | Papel de quem tem acesso sem papel no apusers. |
 | `DB_HOST`/`DB_PORT`/`DB_USER`/`DB_PASSWORD`/`DB_NAME` | `aplogs-db`/3306/`aplogs`/—/`aplogs` | Monta a URL do MySQL. |
@@ -227,7 +230,7 @@ Definidos em `acesso.py` e declarados no apusers na subida (`PATCH /v1/service/m
 |---|---|---|
 | `ver` | visualizador, operador, gestor | todas as leituras (`auth.painel = exigir("ver")`, no router do painel) |
 | `tratar` | operador, gestor | `POST /api/problemas/{id}/reconhecer` e `/resolver` |
-| `gerenciar` | gestor | `PATCH`/`DELETE /api/servicos/{slug}` |
+| `gerenciar` | gestor | `PATCH`/`DELETE /api/servicos/{slug}`, `GET`/`POST /api/integracao` |
 
 `exigir(acao)` valida o nome da ação na importação (erro de programação vira `ValueError` no arranque) e, sem
 permissão, responde 403 `sem_permissao` com o papel atual. Papel desconhecido vindo do apusers vira
@@ -243,7 +246,7 @@ permissão, responde 403 `sem_permissao` com o papel atual. Papel desconhecido v
 - `login` envia `solicitar_acesso=True`: quem não tem acesso gera um pedido para o administrador.
 - O IP do navegador é repassado ao apusers (`x-apusers-client-ip`) para o limite de tentativas.
 - **Atividade**: ações feitas pelas rotas (`problema_reconhecido`, `problema_resolvido`, `servico_editado`,
-  `servico_apagado`) entram em `registrar_acao` (fila do cliente, envio em lote a cada 5 s). Scripts não geram
+  `servico_apagado`, `integracao_gerada`) entram em `registrar_acao` (fila do cliente, envio em lote a cada 5 s). Scripts não geram
   atividade. Tempo de tela e presença chegam por `POST /api/atividade` e são repassados (presença numa thread,
   sem esperar).
 - apusers fora: login e sessão respondem 503; ingestão, monitor e scripts não dependem dele.
@@ -381,7 +384,35 @@ Rotas de leitura e gestão (cookie ou `x-api-secret`). Resumo; detalhes de parâ
 | `GET /api/heartbeats` | Últimos heartbeats de um serviço. |
 | `GET /api/health` | Público. 200 com banco ok, 503 sem banco; informa se o login central está configurado. |
 
-### 10.1 Linha do tempo (`_timelines`)
+### 10.1 Gerenciar integração (`integracao.py`)
+
+Router próprio em `/api/integracao`, todo ele com `exigir("gerenciar")`: a resposta leva a chave de envio, então
+vai com `Cache-Control: no-store` e só gestor (ou script) acessa.
+
+- `GET /api/integracao`: sugestões para o formulário — `url_rede` (`APLOGS_URL_PUBLICA` ou `scheme://Host` da
+  requisição), `url_docker` (`http://aplogs-api:8000`), intervalo padrão e tolerância mínima.
+- `POST /api/integracao` (`IntegracaoIn`: `servico`, `nome`, `descricao`, `grupo`, `repositorio`, `intervalo_s`
+  5–86400, `onde` = `rede|docker`, `linguagem` = `python|node|outro`, `url`):
+  1. normaliza o slug e o repositório (422 se inválidos) e valida a URL (`http(s)://`);
+  2. **cadastra** o serviço se não existe (`status = desconhecido`, log "Integração preparada no painel por …")
+     ou atualiza o existente — `nome` e `intervalo_s` sempre; `grupo`, `descricao`, `repositorio` só se vierem
+     preenchidos (limpar é na Configuração do serviço). `nome_editado` não é marcado: o `APLOGS_NOME` do `.env`
+     manda o mesmo nome no heartbeat;
+  3. gera o `.env` (`gerar_env`) e o `.txt` (`gerar_txt`: aviso sobre a chave, `.env`, rede — teste com
+     `/api/health` ou trecho do `docker-compose.yml` com a rede `aplogs` —, código na linguagem escolhida, como
+     conferir com a tolerância calculada, e o que mais dá para enviar);
+  4. registra a ação `integracao_gerada` no apusers.
+- Valores do `.env` passam por `_valor_env`: espaços repetidos/quebras de linha viram um espaço; com `#`, `$`, aspas, barra invertida
+  ou crase, o valor vai entre aspas simples (o docker compose não interpola `$` dentro delas; python-dotenv e
+  `node --env-file` também aceitam), ou duplas escapadas se houver aspa simples.
+
+No painel, o botão fica no topo da aba Serviços e na Configuração do detalhe de um serviço (pré-preenchido,
+identificador só leitura); aparece só com `pode("gerenciar")`. O formulário roda na gaveta (`estado.integracao`
+evita que a atualização automática a redesenhe). O identificador sai do nome (`slugDe`, que também tira acentos)
+até a pessoa editar. "Copiar" usa a Clipboard API e, em `http://` sem HTTPS (onde ela não existe), cai em
+`execCommand("copy")` com o texto selecionado. "Baixar" monta um `Blob` UTF-8 com BOM (abre certo no Bloco de Notas).
+
+### 10.2 Linha do tempo (`_timelines`)
 
 Para cada serviço, 60 posições (uma por minuto, da mais antiga para a mais recente):
 
@@ -392,7 +423,7 @@ Para cada serviço, 60 posições (uma por minuto, da mais antiga para a mais re
 
 Busca todos os heartbeats da janela (com margem do maior intervalo) numa só consulta e calcula em Python.
 
-### 10.2 Formato das respostas e erros
+### 10.3 Formato das respostas e erros
 
 - Sucesso: `{"ok": true, ...}`.
 - `HTTPException`: `{"ok": false, "error": "<texto>"}`. Erros do login central/permissões trazem também
@@ -428,6 +459,9 @@ HTML + CSS + JS puro, sem build, servido por `GET /` (`Cache-Control: no-cache`)
 Arquivo único, só biblioteca padrão, para copiar nos robôs.
 
 - `Aplogs(url, chave, servico, ...)`; `branch`/`commit` caem em `GIT_BRANCH`/`GIT_COMMIT` do ambiente.
+- `Aplogs.do_ambiente(**extra)` monta o cliente com as variáveis geradas por "Gerenciar integração"
+  (`APLOGS_URL`, `APLOGS_KEY`, `APLOGS_SERVICO` obrigatórias; `APLOGS_NOME`, `APLOGS_INTERVALO_S`,
+  `APLOGS_GRUPO`, `APLOGS_REPOSITORIO`, `APLOGS_VERSAO` opcionais). Falta obrigatória → `ValueError`.
 - `iniciar()` sobe uma thread que manda heartbeat a cada `intervalo_s` e descarrega logs a cada ~2 s
   (lotes de até 1000). `dados_fn` opcional complementa os `dados` de cada heartbeat.
 - Logs vão para uma `Queue` limitada (`max_buffer=5000`); cheia, descarta o mais velho; falha no envio devolve
@@ -456,10 +490,12 @@ python -m pytest tests -q
   pendente) e rotas de controle `/_mock/...` para simular token vencido, acesso revogado e troca de papel.
 - Fixtures: `client` (TestClient com lifespan), `ingest` (`x-api-key`), `painel` (`x-api-secret`) e o helper
   `entrar(client, nome)`.
-- Cobertura atual (29 testes): autenticação (chave, secret, login, pendente, renovação única do token, acesso
+- Cobertura atual (34 testes): autenticação (chave, secret, login, pendente, renovação única do token, acesso
   revogado, papéis declarados, permissões por papel, atividade), heartbeat e cadastro, offline/volta, parada
   normal, degradado, pausa, slug inválido, logs (filtros, paginação, linha avulsa), problemas (eventos e estado),
-  jobs, filas, apagar serviço, limpeza, repositório pelo heartbeat e pelo painel, heartbeat por URL.
+  jobs, filas, apagar serviço, limpeza, repositório pelo heartbeat e pelo painel, heartbeat por URL, "Gerenciar integração" (só gestor, `.env`/`.txt`
+  gerados, cadastro e atualização sem apagar campos, rede Docker, validações, aspas do `.env`) e
+  `Aplogs.do_ambiente()` do cliente Python.
 
 Para simular tempo, os testes "envelhecem" `ultimo_heartbeat_em` direto no banco (`_envelhecer_heartbeat`).
 

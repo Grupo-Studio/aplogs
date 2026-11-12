@@ -5,6 +5,20 @@ Para conectar um serviço não precisa configurar nada na aplogs: é só chamar 
 
 ## Em 1 minuto
 
+**Mais fácil:** no painel, *Serviços → Gerenciar integração* (papel gestor). Ele gera o bloco do `.env` e um `.txt`
+com o passo a passo para o seu serviço. O resto desta página é o que está por trás disso.
+
+Variáveis que o painel gera (o cliente Python lê todas com `Aplogs.do_ambiente()`):
+
+| Variável | |
+|---|---|
+| `APLOGS_URL` | Endereço da aplogs visto pelo serviço |
+| `APLOGS_KEY` | Chave de envio (`APLOGS_INGEST_KEY` da aplogs) |
+| `APLOGS_SERVICO` | Identificador do serviço (campo `servico`) |
+| `APLOGS_NOME` | Nome amigável (campo `nome`) |
+| `APLOGS_INTERVALO_S` | Intervalo do heartbeat em segundos |
+| `APLOGS_GRUPO`, `APLOGS_REPOSITORIO` | Opcionais |
+
 **Endereço** (`APLOGS_URL` no seu serviço):
 
 | De onde o serviço chama | URL |

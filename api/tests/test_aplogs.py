@@ -427,3 +427,91 @@ def test_atividade_repassada(client, painel):
     r = client.post("/api/atividade", headers=painel, json={"events": []})
     assert r.status_code == 403 and r.json()["codigo"] == "so_pessoas"
     client.post("/api/auth/logout", headers={"X-Web": "1"})
+
+
+# ── Gerenciar integração ─────────────────────────────────────────────────────
+
+def test_integracao_so_gestor(client):
+    from conftest import entrar
+    W = {"X-Web": "1"}
+    corpo = {"servico": "robo-int", "nome": "Robô Int"}
+    for nome in ("vera", "ana"):                                     # visualizador e operador: não veem a chave
+        entrar(client, nome)
+        assert client.get("/api/integracao").status_code == 403
+        r = client.post("/api/integracao", headers=W, json=corpo)
+        assert r.status_code == 403 and r.json()["codigo"] == "sem_permissao"
+    entrar(client, "gil")
+    assert client.post("/api/integracao", json=corpo).json()["codigo"] == "csrf"
+    r = client.post("/api/integracao", headers=W, json=corpo)
+    assert r.status_code == 200 and r.headers["cache-control"] == "no-store"
+    client.post("/api/auth/logout", headers=W)
+
+
+def test_integracao_gera_env_e_txt(client, ingest, painel):
+    sug = client.get("/api/integracao", headers=painel).json()
+    assert sug["url_rede"] == "http://testserver" and sug["url_docker"] == "http://aplogs-api:8000"
+
+    r = client.post("/api/integracao", headers=painel, json={
+        "servico": "Robô DCTF!", "nome": "Robô DCTF", "grupo": "Fiscal", "repositorio": "Grupo-Studio/robo-dctf",
+        "intervalo_s": 60, "url": "http://192.168.1.100:3070/", "linguagem": "python"}).json()
+    assert r["ok"] and r["criado"] and r["servico"]["slug"] == "rob-dctf"
+    env = dict(l.split("=", 1) for l in r["env"].splitlines() if l and not l.startswith("#"))
+    assert env == {"APLOGS_URL": "http://192.168.1.100:3070", "APLOGS_KEY": "chave-teste", "APLOGS_SERVICO": "rob-dctf",
+                   "APLOGS_NOME": "Robô DCTF", "APLOGS_INTERVALO_S": "60", "APLOGS_GRUPO": "Fiscal",
+                   "APLOGS_REPOSITORIO": "https://github.com/Grupo-Studio/robo-dctf"}
+    assert r["arquivo"] == "aplogs-integracao-rob-dctf.txt"
+    assert r["env"] in "\n".join(l[4:] for l in r["txt"].splitlines()) + "\n"     # o .env vai no .txt
+    assert "Aplogs.do_ambiente()" in r["txt"] and "180 s" in r["txt"]          # tolerância = 3 × 60
+
+    # cadastrado, esperando o primeiro heartbeat
+    det = client.get("/api/servicos/rob-dctf", headers=painel).json()["servico"]
+    assert det["status"] == "desconhecido" and det["intervalo_s"] == 60 and det["grupo"] == "Fiscal"
+    hb = client.post("/api/ingest/heartbeat", headers=ingest, json={"servico": env["APLOGS_SERVICO"],
+                                                                     "intervalo_s": 60}).json()
+    assert hb["status"] == "online"
+
+    # de novo, para um serviço que já existe: campo vazio não apaga; docker usa a rede interna
+    r = client.post("/api/integracao", headers=painel, json={
+        "servico": "rob-dctf", "nome": "Robô DCTF", "onde": "docker", "linguagem": "node"}).json()
+    assert not r["criado"] and r["servico"]["grupo"] == "Fiscal" and r["url"] == "http://aplogs-api:8000"
+    assert "networks: [default, aplogs]" in r["txt"] and "process.env.APLOGS_KEY" in r["txt"]
+
+    r = client.post("/api/integracao", headers=painel, json={"servico": "x1", "nome": "X", "linguagem": "outro"}).json()
+    assert r["url"] == "http://testserver" and "curl" in r["txt"]
+
+
+def test_integracao_valida(client, painel):
+    def post(**kw):
+        return client.post("/api/integracao", headers=painel, json={"servico": "robo-v", "nome": "V", **kw})
+    assert post(servico="!!!").status_code == 422
+    assert post(repositorio="não é repo").status_code == 422
+    assert post(url="ftp://x").status_code == 422
+    assert post(onde="marte").status_code == 422
+
+
+def test_integracao_valor_env():
+    from app.integracao import _valor_env
+    assert _valor_env("Robô  DCTF") == "Robô DCTF"
+    assert _valor_env("a$b#c") == "'a$b#c'"
+    assert _valor_env("it's $x") == '"it\'s $x"'
+
+
+def test_cliente_python_do_ambiente(monkeypatch):
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "clientes" / "python"))
+    from aplogs_client import Aplogs
+    for k in ("APLOGS_URL", "APLOGS_KEY", "APLOGS_SERVICO", "APLOGS_NOME", "APLOGS_INTERVALO_S", "APLOGS_GRUPO"):
+        monkeypatch.delenv(k, raising=False)
+    import pytest
+    with pytest.raises(ValueError):
+        Aplogs.do_ambiente()
+    monkeypatch.setenv("APLOGS_URL", "http://x:3070/")
+    monkeypatch.setenv("APLOGS_KEY", "k")
+    monkeypatch.setenv("APLOGS_SERVICO", "robo-env")
+    monkeypatch.setenv("APLOGS_NOME", "Robô Env")
+    monkeypatch.setenv("APLOGS_INTERVALO_S", "45")
+    monkeypatch.setenv("APLOGS_GRUPO", "G")
+    a = Aplogs.do_ambiente(versao="2.0")
+    assert (a.url, a.chave, a.servico, a.nome, a.intervalo_s) == ("http://x:3070", "k", "robo-env", "Robô Env", 45)
+    assert a.info["grupo"] == "G" and a.info["versao"] == "2.0"

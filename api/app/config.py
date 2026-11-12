@@ -23,6 +23,8 @@ APLOGS_SECRET = os.getenv("APLOGS_SECRET", "").strip()
 APLOGS_INGEST_KEY = os.getenv("APLOGS_INGEST_KEY", "").strip()
 # Quanto tempo o login do painel dura
 SESSAO_HORAS = _int("SESSAO_HORAS", 12)
+# Endereço da aplogs que vai no .env gerado em "Gerenciar integração" (vazio = o endereço pelo qual o painel foi aberto)
+APLOGS_URL_PUBLICA = os.getenv("APLOGS_URL_PUBLICA", "").strip().rstrip("/")
 
 # ── Login central (apusers) ──────────────────────────────────────────────────
 # O painel pede o e-mail e a senha do apusers. A chave do serviço fica só aqui (o navegador nunca a vê).

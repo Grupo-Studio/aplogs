@@ -7,7 +7,8 @@ Cliente da aplogs para qualquer robô/serviço em Python. Só biblioteca padrão
 
     aplogs = Aplogs("http://192.168.1.100:3070", chave="<APLOGS_INGEST_KEY>",
                     servico="robo-dctf", nome="Robô DCTF", intervalo_s=30, versao="1.0")
-    aplogs.iniciar()                        # heartbeat em segundo plano + envio dos logs
+    # ou, com o .env gerado no painel ("Gerenciar integração"):  aplogs = Aplogs.do_ambiente()
+    aplogs.iniciar()                       # heartbeat em segundo plano + envio dos logs
     aplogs.capturar_logging("INFO")         # manda os logs do módulo logging (INFO+) para a aplogs
 
     aplogs.job("lote-42", nome="Lote 42", status="rodando", progresso=30, etapa="baixando")
@@ -63,6 +64,27 @@ class Aplogs:
         self._parar = threading.Event()
         self._thread: threading.Thread | None = None
         self.dados_fn = None          # opcional: função que devolve um dict para cada heartbeat
+
+    @classmethod
+    def do_ambiente(cls, **extra) -> "Aplogs":
+        """O jeito mais simples: as variáveis que o painel gera em "Gerenciar integração".
+
+        APLOGS_URL, APLOGS_KEY, APLOGS_SERVICO (obrigatórias) e, se houver, APLOGS_NOME,
+        APLOGS_INTERVALO_S, APLOGS_GRUPO, APLOGS_REPOSITORIO, APLOGS_VERSAO.
+        `extra` sobrescreve o que veio do ambiente (ex.: versao="1.2")."""
+        env = os.environ
+        faltando = [n for n in ("APLOGS_URL", "APLOGS_KEY", "APLOGS_SERVICO") if not env.get(n)]
+        if faltando:
+            raise ValueError(f"aplogs: defina {', '.join(faltando)} no ambiente (veja 'Gerenciar integração' no painel)")
+        campos = {"nome": env.get("APLOGS_NOME"), "grupo": env.get("APLOGS_GRUPO"),
+                  "repositorio": env.get("APLOGS_REPOSITORIO"), "versao": env.get("APLOGS_VERSAO")}
+        try:
+            campos["intervalo_s"] = int(env.get("APLOGS_INTERVALO_S") or 0) or None
+        except ValueError:
+            pass
+        campos = {k: v for k, v in campos.items() if v}
+        campos.update(extra)
+        return cls(env["APLOGS_URL"], env["APLOGS_KEY"], env["APLOGS_SERVICO"], **campos)
 
     # ── envio ────────────────────────────────────────────────────────────────
 
