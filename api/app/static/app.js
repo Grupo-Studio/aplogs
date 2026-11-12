@@ -14,6 +14,7 @@ const estado = {
   logs: { itens: [], ultimoId: 0, maisAntigo: null, acabou: false },
   probStatus: "abertos",
   gaveta: null,                // slug aberto na gaveta
+  integracao: false,           // gaveta mostrando "Gerenciar integração"
   timers: [],
   usuario: null,               // quem entrou (login central): {nome, email, papel, permissoes}
 };
@@ -167,6 +168,7 @@ function mostrarApp(usuario) {
   estado.aba = "servicos";
   $$(".abas button").forEach(b => b.classList.toggle("ativa", b.dataset.aba === "servicos"));
   $$(".aba").forEach(s => { s.hidden = s.id !== "aba-servicos"; });
+  $("#servicos-barra").hidden = !pode("gerenciar");
   $("#tela-login").hidden = true;
   $("#tela-app").hidden = false;
   iniciarTimers();
@@ -645,6 +647,7 @@ function abrirGaveta(slug) {
 
 function fecharGaveta() {
   estado.gaveta = null;
+  estado.integracao = false;
   $("#gaveta").hidden = true;
   $("#gaveta-fundo").hidden = true;
 }
@@ -710,6 +713,7 @@ async function atualizarGaveta(completo = false) {
       <label class="chave"><input name="monitorar" type="checkbox" ${s.monitorar ? "checked" : ""}> Monitorar (desligado = sem alerta de offline)</label>
       <div class="linha" ${pode("gerenciar") ? "" : "hidden"}>
         <button class="botao" type="submit">Salvar</button>
+        <button class="fantasma" type="button" id="g-integracao" title="Gera o .env e as instruções deste serviço">Gerenciar integração</button>
         <span style="flex:1"></span>
         <button class="fantasma perigo" type="button" id="g-apagar">Apagar serviço</button>
       </div>
@@ -735,6 +739,7 @@ async function atualizarGaveta(completo = false) {
       atualizarGaveta(true);
     } catch (err) { toast(esc(err.message), "var(--vermelho)"); }
   };
+  $("#g-integracao").onclick = () => abrirIntegracao(s);
   $("#g-apagar").onclick = async () => {
     if (!confirm(`Apagar "${s.nome}" e todos os logs, jobs e problemas dele?\n\nSe o serviço continuar mandando dados, ele aparece de novo.`)) return;
     try {
@@ -743,6 +748,144 @@ async function atualizarGaveta(completo = false) {
       atualizarPainel();
     } catch (err) { toast(esc(err.message), "var(--vermelho)"); }
   };
+}
+
+// ── Gerenciar integração ────────────────────────────────────────────────────
+// A pessoa diz o que é o serviço; a aplogs cadastra e devolve o bloco do .env (com a chave de envio)
+// e um .txt com o passo a passo. Só para quem pode "gerenciar" (a API confere).
+
+function slugDe(texto) {
+  return (texto || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-").replace(/^[-._]+|-+$/g, "").slice(0, 80);
+}
+
+async function copiarTexto(texto, campo) {
+  try { await navigator.clipboard.writeText(texto); return true; } catch { /* http sem HTTPS: sem clipboard API */ }
+  campo.focus();
+  campo.select();
+  try { return document.execCommand("copy"); } catch { return false; }
+}
+
+function baixarTexto(nome, texto) {
+  const url = URL.createObjectURL(new Blob(["\ufeff" + texto], { type: "text/plain;charset=utf-8" }));
+  const a = Object.assign(document.createElement("a"), { href: url, download: nome });
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+$("#abrir-integracao").addEventListener("click", () => abrirIntegracao());
+
+async function abrirIntegracao(s = null) {
+  estado.gaveta = null;
+  estado.integracao = true;
+  $("#gaveta").hidden = false;
+  $("#gaveta-fundo").hidden = false;
+  $("#gaveta").scrollTop = 0;
+  $("#gaveta").innerHTML = `<p class="mudo">Carregando…</p>`;
+  let sug;
+  try { sug = await api("/api/integracao"); } catch (err) {
+    $("#gaveta").innerHTML = `<p class="erro">${esc(err.message)}</p>`;
+    return;
+  }
+  if (!estado.integracao) return;
+  const local = ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
+  $("#gaveta").innerHTML = `
+    <div class="gaveta-topo">
+      <div><h2>Gerenciar integração</h2><div class="mudo">${s ? esc(s.nome) : "Conectar um serviço à aplogs"}</div></div>
+      <button class="fantasma" id="i-fechar">✕</button>
+    </div>
+    <p class="mudo">Diga o que é o serviço. A aplogs já deixa ele cadastrado e gera o bloco para colar no
+      <code>.env</code> dele, mais um <code>.txt</code> com o passo a passo.</p>
+    <form class="form-ed" id="i-form" autocomplete="off">
+      <label>Nome do serviço *<input name="nome" required maxlength="160" value="${esc(s?.nome || "")}" placeholder="ex.: Robô DCTF"></label>
+      <label>Identificador *<input name="servico" class="mono" required maxlength="80" value="${esc(s?.slug || "")}"
+        placeholder="ex.: robo-dctf" ${s ? "readonly" : ""}>
+        <span class="dica">${s ? "O identificador não muda (é como o serviço se apresenta)." : "Minúsculas, números, - _ . (sai do nome sozinho)."}</span></label>
+      <label>Grupo (agrupa os cards)<input name="grupo" maxlength="80" value="${esc(s?.grupo || "")}" placeholder="ex.: Receita, RPA, APIs"></label>
+      <label>Descrição<textarea name="descricao" rows="2" maxlength="2000">${esc(s?.descricao || "")}</textarea></label>
+      <label>Repositório no GitHub<input name="repositorio" maxlength="300" value="${esc(s?.repositorio || "")}" placeholder="ex.: Grupo-Studio/robo-dctf"></label>
+      <label>Heartbeat a cada (segundos)<input name="intervalo_s" type="number" min="5" max="86400" required value="${s?.intervalo_s || sug.intervalo_padrao_s}">
+        <span class="dica" id="i-tolerancia"></span></label>
+      <label>Onde o serviço roda
+        <select name="onde">
+          <option value="rede">Em outra máquina (ou fora do Docker)</option>
+          <option value="docker">Em um container nesta mesma máquina da aplogs</option>
+        </select></label>
+      <label id="i-url-campo">Endereço da aplogs, visto pelo serviço<input name="url" class="mono" maxlength="300" value="${esc(sug.url_rede)}">
+        ${local ? `<span class="dica atencao">Você abriu o painel por ${esc(location.hostname)}: troque pelo IP da máquina da aplogs na rede.</span>` : ""}</label>
+      <label>Linguagem do serviço
+        <select name="linguagem">
+          <option value="python">Python</option>
+          <option value="node">Node.js</option>
+          <option value="outro">Outra (curl / qualquer HTTP)</option>
+        </select></label>
+      <div class="linha"><button class="botao" type="submit">Gerar integração</button></div>
+    </form>
+    <div id="i-resultado"></div>`;
+
+  const f = $("#i-form");
+  const tolerancia = () => {
+    const n = Number(f.intervalo_s.value) || sug.intervalo_padrao_s;
+    $("#i-tolerancia").textContent = `Sem heartbeat por ${duracao(Math.max(3 * n, sug.tolerancia_minima_s))}, o serviço fica offline.`;
+  };
+  const onde = () => { $("#i-url-campo").hidden = f.onde.value !== "rede"; };
+  tolerancia();
+  onde();
+  $("#i-fechar").onclick = fecharGaveta;
+  f.intervalo_s.oninput = tolerancia;
+  f.onde.onchange = onde;
+  if (!s) {
+    f.nome.oninput = () => { if (!f.servico.dataset.manual) f.servico.value = slugDe(f.nome.value); };
+    f.servico.oninput = () => { f.servico.dataset.manual = f.servico.value ? "1" : ""; };
+    f.servico.onblur = () => { f.servico.value = slugDe(f.servico.value); };
+  }
+  setTimeout(() => f.nome.focus(), 50);
+
+  f.onsubmit = async e => {
+    e.preventDefault();
+    const botao = f.querySelector("button[type=submit]");
+    botao.disabled = true;
+    try {
+      const r = await api("/api/integracao", { method: "POST", body: {
+        servico: slugDe(f.servico.value), nome: f.nome.value.trim(), grupo: f.grupo.value.trim() || null,
+        descricao: f.descricao.value.trim() || null, repositorio: f.repositorio.value.trim() || null,
+        intervalo_s: Number(f.intervalo_s.value), onde: f.onde.value, linguagem: f.linguagem.value,
+        url: f.url.value.trim() || null } });
+      if (!estado.integracao) return;
+      f.servico.value = r.servico.slug;
+      mostrarResultadoIntegracao(r);
+      atualizarPainel();
+    } catch (err) {
+      toast(esc(err.message), "var(--vermelho)");
+    } finally {
+      botao.disabled = false;
+    }
+  };
+}
+
+function mostrarResultadoIntegracao(r) {
+  const linhas = r.env.trim().split("\n").length;
+  $("#i-resultado").innerHTML = `
+    <h5>Cole no .env do serviço</h5>
+    <p class="mudo">${r.criado
+      ? `Pronto: <b>${esc(r.servico.nome)}</b> já aparece em Serviços como “Sem heartbeat” até o primeiro envio.`
+      : `<b>${esc(r.servico.nome)}</b> já existia: os dados foram atualizados.`}</p>
+    <textarea class="codigo" id="i-env" readonly rows="${linhas}" spellcheck="false">${esc(r.env)}</textarea>
+    <div class="integracao-acoes">
+      <button class="botao" id="i-copiar">Copiar .env</button>
+      <button class="fantasma" id="i-baixar">Baixar instruções (.txt)</button>
+    </div>
+    <p class="aviso-chave">⚠ Isso tem a chave de envio da aplogs: trate como senha e não suba o .env para o git.</p>
+    <details><summary>Ver as instruções aqui</summary><pre class="json">${esc(r.txt)}</pre></details>`;
+  $("#i-copiar").onclick = async () => {
+    const ok = await copiarTexto(r.env, $("#i-env"));
+    toast(ok ? "Copiado. Cole no .env do serviço." : "Não deu para copiar sozinho: o texto ficou selecionado, use Ctrl+C.",
+      ok ? "var(--verde)" : "var(--amarelo)");
+  };
+  $("#i-baixar").onclick = () => baixarTexto(r.arquivo, r.txt);
+  $("#i-resultado").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 // ── Início ──────────────────────────────────────────────────────────────────

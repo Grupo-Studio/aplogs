@@ -48,6 +48,7 @@ servidor: o navegador nunca fala com o apusers.
   | Ver serviços, logs, problemas, jobs e filas | ✓ | ✓ | ✓ |
   | Reconhecer / resolver problemas | | ✓ | ✓ |
   | Editar (nome, grupo, repositório, monitoramento) e apagar serviços | | | ✓ |
+  | Gerenciar integração (gera o `.env` com a chave de envio) | | | ✓ |
 
   O que o papel não permite some da tela, e a API confere de novo (403 `sem_permissao`). Tirar o acesso,
   desativar a pessoa ou trocar o papel no apusers vale em até 30 s.
@@ -97,6 +98,13 @@ docker compose ps                      # os dois containers devem estar "healthy
 
 Não precisa configurar nada aqui: o serviço chama a API e **se cadastra sozinho** na primeira chamada.
 Guia rápido (curl, Node, Python, rede Docker) em **[docs/INTEGRACAO.md](docs/INTEGRACAO.md)**.
+
+**Pelo painel (gestor):** em *Serviços → Gerenciar integração* (ou no detalhe de um serviço) você diz o nome, o
+grupo, o repositório, o intervalo de heartbeat, onde o serviço roda e a linguagem. A aplogs já cadastra o serviço
+(aparece como "Sem heartbeat") e gera o bloco para colar no `.env` dele (`APLOGS_URL`, `APLOGS_KEY`,
+`APLOGS_SERVICO`...) e um `.txt` com o passo a passo e o código pronto (Python, Node ou curl). O endereço que vai no
+`.env` é o pelo qual o painel foi aberto; para fixar outro (ex.: o IP da máquina), use `APLOGS_URL_PUBLICA`.
+Como o `.env` leva a chave de envio, só o papel gestor vê o botão.
 
 - **URL:** `http://aplogs-api:8000` para containers na mesma máquina (rede Docker `aplogs`);
   `http://<ip>:3070` para o resto.
@@ -148,6 +156,7 @@ Documentação interativa em `/api/docs`.
 | GET | `/api/jobs` | `?servico=&status=&tipo=&q=` |
 | GET | `/api/filas` | Filas + amostras da última hora |
 | GET | `/api/heartbeats` | `?servico=&limite=` |
+| GET/POST | `/api/integracao` | Sugestões do formulário · cadastra o serviço e gera `env` + `txt` (gestor) |
 
 Entrada do painel:
 
@@ -181,6 +190,7 @@ api/app/
   apusers_client.py  cliente do apusers (copiado de Grupo-Studio/apusers)
   ingestao.py    POST /api/ingest/*  (serviços → aplogs)
   painel.py      rotas do painel (cada uma com a permissão que exige)
+  integracao.py  "Gerenciar integração": cadastra o serviço, gera o .env e o .txt de instruções
   monitor.py     monitor de heartbeat (offline) + limpeza por retenção
   servicos.py    regras: cadastro, status, problemas
   modelos.py     tabelas (SQLAlchemy)

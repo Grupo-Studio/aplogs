@@ -24,12 +24,12 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import acesso, auth, config, db, ingestao, monitor, painel
+from . import acesso, auth, config, db, ingestao, integracao, monitor, painel
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(name)s | %(message)s")
 logger = logging.getLogger("aplogs")
 
-VERSAO = "1.1.0"
+VERSAO = "1.2.0"
 ESTATICO = Path(__file__).parent / "static"
 
 
@@ -72,6 +72,7 @@ async def _validacao(_req: Request, exc: RequestValidationError):
 
 app.include_router(ingestao.router)
 app.include_router(painel.router)
+app.include_router(integracao.router)
 
 
 # ── Saúde e login ────────────────────────────────────────────────────────────

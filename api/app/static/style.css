@@ -187,6 +187,17 @@ td.nowrap, .nowrap { white-space: nowrap; }
 .form-ed input:focus, .form-ed textarea:focus { border-color: var(--azul); }
 .form-ed .linha { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .botao { background: var(--verde); color: #05261a; border: 0; border-radius: 7px; padding: 8px 14px; font-weight: 700; }
+.form-ed select { background: var(--cartao); border: 1px solid var(--borda); border-radius: 7px; padding: 8px 10px; outline: none; }
+.form-ed select:focus { border-color: var(--azul); }
+.form-ed .dica { font-size: 11.5px; color: var(--fraco); }
+.form-ed .dica.atencao { color: var(--amarelo); }
+.barra-direita { justify-content: flex-end; }
+textarea.codigo { width: 100%; background: var(--cartao); border: 1px solid var(--borda); border-radius: 8px; padding: 10px 12px; font: 12.5px/1.55 var(--mono); color: var(--texto); resize: vertical; outline: none; white-space: pre; overflow: auto; }
+.integracao-acoes { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+.aviso-chave { margin: 10px 0 0; font-size: 12.5px; color: var(--amarelo); }
+.gaveta details { margin-top: 14px; }
+.gaveta summary { cursor: pointer; color: var(--mudo); font-size: 13px; margin-bottom: 8px; }
+.gaveta details pre.json { max-height: 420px; white-space: pre; }
 pre.json { background: var(--cartao); border: 1px solid var(--borda); border-radius: 8px; padding: 10px 12px; font: 12px/1.5 var(--mono); color: var(--mudo); overflow: auto; max-height: 300px; margin: 0; }
 .mini-lista { display: grid; gap: 6px; }
 .mini-item { display: flex; justify-content: space-between; gap: 10px; background: var(--cartao); border: 1px solid var(--borda); border-radius: 7px; padding: 7px 10px; font-size: 13px; }

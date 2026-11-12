@@ -58,10 +58,14 @@
 
   <!-- Serviços -->
   <section id="aba-servicos" class="aba">
+    <div id="servicos-barra" class="filtros barra-direita" hidden>
+      <button class="botao" id="abrir-integracao" title="Gera o .env e as instruções para conectar um serviço">+ Gerenciar integração</button>
+    </div>
     <div id="grade-servicos" class="grade"></div>
     <div id="vazio-servicos" class="vazio" hidden>
       <h3>Nenhum serviço conectado ainda</h3>
-      <p>Os serviços aparecem aqui sozinhos no primeiro heartbeat. Veja <code>docs/INTEGRACAO.md</code>.</p>
+      <p>Os serviços aparecem aqui sozinhos no primeiro heartbeat. Para gerar o <code>.env</code> e as instruções de um
+        serviço, use <b>Gerenciar integração</b> (papel gestor) ou veja <code>docs/INTEGRACAO.md</code>.</p>
     </div>
   </section>
 
