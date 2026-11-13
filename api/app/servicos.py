@@ -93,6 +93,20 @@ def normalizar_repositorio(valor) -> str | None:
     return v
 
 
+def normalizar_endereco(valor) -> str | None:
+    """Onde o serviço atende na rede: "http://192.168.1.100:3067" (sem esquema, vira http://).
+    Devolve a URL sem "/" no fim (ou None se vazio). Só http(s): o valor vira link no painel."""
+    v = str(valor or "").strip()
+    if not v:
+        return None
+    if not re.match(r"^[a-z][a-z0-9+.-]*://", v, re.IGNORECASE):
+        v = f"http://{v}"
+    v = v.rstrip("/")
+    if not re.match(r"^https?://[\w.-]+(:\d{1,5})?(/[^\s\"'<>]*)?$", v, re.IGNORECASE) or len(v) > 300:
+        raise ValueError(f"endereço inválido: '{valor}' (ex.: http://192.168.1.100:3067)")
+    return v
+
+
 def data_utc(valor) -> datetime | None:
     """ISO 8601 (com ou sem fuso; sem fuso = UTC) ou epoch em segundos → datetime UTC sem fuso."""
     if valor in (None, ""):

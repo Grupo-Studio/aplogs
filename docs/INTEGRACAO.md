@@ -18,6 +18,7 @@ Variáveis que o painel gera (o cliente Python lê todas com `Aplogs.do_ambiente
 | `APLOGS_NOME` | Nome amigável (campo `nome`) |
 | `APLOGS_INTERVALO_S` | Intervalo do heartbeat em segundos |
 | `APLOGS_GRUPO`, `APLOGS_REPOSITORIO` | Opcionais |
+| `APLOGS_ENDERECO` | Opcional: onde **o seu serviço** atende na rede, ex.: `http://192.168.1.100:3067` (≠ `APLOGS_URL`, que é a aplogs) |
 
 **Endereço** (`APLOGS_URL` no seu serviço):
 
@@ -114,7 +115,8 @@ Mande a cada `intervalo_s` segundos (30 é um bom padrão).
   "versao": "2.5.0",
   "host": "vm-receita",
   "ambiente": "producao",
-  "repositorio": "Grupo-Studio/aplogin",
+  "endereco": "http://192.168.1.100:3067",
+  "repositorio": "https://github.com/Grupo-Studio/aplogin",
   "branch": "Receita-aplogs",
   "commit": "39d86b0f3e2a1c…",
   "intervalo_s": 30,
@@ -134,7 +136,22 @@ Mande a cada `intervalo_s` segundos (30 é um bom padrão).
 - **Offline:** sem heartbeat por mais que a tolerância (padrão `max(3 × intervalo_s, 60 s)`; ajustável no painel),
   o monitor marca offline e abre o problema `aplogs:offline` (crítico). Ele é resolvido sozinho no próximo heartbeat.
 - `dados` é livre. Os campos simples (até 2 níveis) aparecem no card; o JSON inteiro, no detalhe.
+- `endereco`: veja *Onde o serviço está*, logo abaixo.
 - `repositorio` / `branch` / `commit`: veja *Repositório e versão rodando*, logo abaixo.
+
+### Onde o serviço está
+
+`endereco` é a URL pela qual o serviço é acessado na rede interna: `http://<ip-da-máquina>:<porta>`
+(ex.: `http://192.168.1.100:3067`). O card e o detalhe mostram como link. É o que basta para achar o serviço na rede.
+
+- Sem `http://` a aplogs completa (`192.168.1.100:3067` → `http://192.168.1.100:3067`). Só `http(s)` é aceito;
+  valor inválido é ignorado (não derruba o heartbeat).
+- O heartbeat **sempre atualiza** (é onde o serviço está agora). Heartbeat sem `endereco` não apaga o que existe.
+  Também dá para preencher no painel (detalhe → Configuração), para serviços que não mandam.
+- Num container, o serviço **não sabe** o IP da máquina nem a porta publicada: passe pelo `.env`
+  (`APLOGS_ENDERECO`, que o *Gerenciar integração* já gera) e mande esse valor. Pelo mesmo motivo, `host`
+  dentro de um container é o id do container, não o nome da máquina.
+- Serviço que não atende pela rede (robô, script) simplesmente não manda.
 
 ### Repositório e versão rodando
 
@@ -173,7 +190,7 @@ $env:GIT_COMMIT = git rev-parse HEAD; $env:GIT_BRANCH = git branch --show-curren
 O serviço manda `os.getenv("GIT_COMMIT")` / `process.env.GIT_COMMIT` no heartbeat (o cliente Python já faz isso sozinho).
 
 **Pela URL** — `GET` ou `POST /api/ingest/heartbeat/{servico}?key=<chave>`, sem corpo. Parâmetros opcionais:
-`status`, `mensagem`, `intervalo_s`, `nome`. Para quem só consegue chamar uma URL (cron, script, monitor externo).
+`status`, `mensagem`, `intervalo_s`, `nome`, `endereco`. Para quem só consegue chamar uma URL (cron, script, monitor externo).
 Ponha em `intervalo_s` de quanto em quanto tempo a URL é chamada, senão o serviço cai como offline entre as chamadas.
 
 ## Logs — `POST /api/ingest/logs`

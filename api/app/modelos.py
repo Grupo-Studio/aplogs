@@ -39,6 +39,7 @@ class Servico(Base):
     versao:              Mapped[str | None] = mapped_column(String(80))
     host:                Mapped[str | None] = mapped_column(String(160))
     ambiente:            Mapped[str | None] = mapped_column(String(40))
+    endereco:            Mapped[str | None] = mapped_column(String(300))         # http://192.168.1.100:3067 (onde atende)
     repositorio:         Mapped[str | None] = mapped_column(String(300))         # https://github.com/dono/repo
     branch:              Mapped[str | None] = mapped_column(String(120))         # branch que está rodando
     commit_sha:          Mapped[str | None] = mapped_column(String(64))          # commit que está rodando

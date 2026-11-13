@@ -362,6 +362,40 @@ def test_repositorio_pelo_painel(client, ingest, painel):
                for s in client.get("/api/painel", headers=painel).json()["servicos"])
 
 
+# ── Endereço do serviço na rede ──────────────────────────────────────────────
+
+def test_endereco_pelo_heartbeat(client, ingest, painel):
+    r = client.post("/api/ingest/heartbeat", headers=ingest, json={
+        "servico": "end-a", "endereco": "http://192.168.1.100:3067/",
+        "repositorio": "https://github.com/Grupo-Studio/aprap"})
+    assert r.status_code == 200
+    s = client.get("/api/servicos/end-a", headers=painel).json()["servico"]
+    assert s["endereco"] == "http://192.168.1.100:3067"
+    assert s["repositorio"] == "https://github.com/Grupo-Studio/aprap"
+    # o heartbeat sempre atualiza (é onde o serviço está agora); sem esquema vira http://
+    client.post("/api/ingest/heartbeat", headers=ingest, json={"servico": "end-a", "endereco": "10.0.0.5:3080"})
+    assert client.get("/api/servicos/end-a", headers=painel).json()["servico"]["endereco"] == "http://10.0.0.5:3080"
+    # heartbeat sem endereço não apaga; endereço estranho não derruba o heartbeat nem troca o que existe
+    client.post("/api/ingest/heartbeat", headers=ingest, json={"servico": "end-a"})
+    for ruim in ("javascript:alert(1)", "ftp://10.0.0.5", "http://x\"><script>"):
+        assert client.post("/api/ingest/heartbeat", headers=ingest,
+                           json={"servico": "end-a", "endereco": ruim}).status_code == 200
+    assert client.get("/api/servicos/end-a", headers=painel).json()["servico"]["endereco"] == "http://10.0.0.5:3080"
+    # heartbeat pela URL também aceita
+    client.get("/api/ingest/heartbeat/end-b?key=chave-teste&endereco=https%3A%2F%2Fapi.interna%3A8443")
+    assert client.get("/api/servicos/end-b", headers=painel).json()["servico"]["endereco"] == "https://api.interna:8443"
+
+
+def test_endereco_pelo_painel(client, ingest, painel):
+    client.post("/api/ingest/heartbeat", headers=ingest, json={"servico": "end-c"})
+    r = client.patch("/api/servicos/end-c", headers=painel, json={"endereco": "192.168.1.100:3067"})
+    assert r.status_code == 200 and r.json()["servico"]["endereco"] == "http://192.168.1.100:3067"
+    assert client.patch("/api/servicos/end-c", headers=painel, json={"endereco": "javascript:alert(1)"}).status_code == 422
+    assert client.patch("/api/servicos/end-c", headers=painel, json={"endereco": ""}).json()["servico"]["endereco"] is None
+    assert any(s["slug"] == "end-c" and "endereco" in s
+               for s in client.get("/api/painel", headers=painel).json()["servicos"])
+
+
 # ── Login central: permissões por papel e atividade ──────────────────────────
 
 def test_permissoes_por_papel(client, ingest):
@@ -453,12 +487,13 @@ def test_integracao_gera_env_e_txt(client, ingest, painel):
 
     r = client.post("/api/integracao", headers=painel, json={
         "servico": "Robô DCTF!", "nome": "Robô DCTF", "grupo": "Fiscal", "repositorio": "Grupo-Studio/robo-dctf",
-        "intervalo_s": 60, "url": "http://192.168.1.100:3070/", "linguagem": "python"}).json()
+        "endereco": "192.168.1.120:3067", "intervalo_s": 60, "url": "http://192.168.1.100:3070/", "linguagem": "python"}).json()
     assert r["ok"] and r["criado"] and r["servico"]["slug"] == "rob-dctf"
     env = dict(l.split("=", 1) for l in r["env"].splitlines() if l and not l.startswith("#"))
     assert env == {"APLOGS_URL": "http://192.168.1.100:3070", "APLOGS_KEY": "chave-teste", "APLOGS_SERVICO": "rob-dctf",
                    "APLOGS_NOME": "Robô DCTF", "APLOGS_INTERVALO_S": "60", "APLOGS_GRUPO": "Fiscal",
-                   "APLOGS_REPOSITORIO": "https://github.com/Grupo-Studio/robo-dctf"}
+                   "APLOGS_REPOSITORIO": "https://github.com/Grupo-Studio/robo-dctf",
+                   "APLOGS_ENDERECO": "http://192.168.1.120:3067"}
     assert r["arquivo"] == "aplogs-integracao-rob-dctf.txt"
     assert r["env"] in "\n".join(l[4:] for l in r["txt"].splitlines()) + "\n"     # o .env vai no .txt
     assert "Aplogs.do_ambiente()" in r["txt"] and "180 s" in r["txt"]          # tolerância = 3 × 60
@@ -466,6 +501,7 @@ def test_integracao_gera_env_e_txt(client, ingest, painel):
     # cadastrado, esperando o primeiro heartbeat
     det = client.get("/api/servicos/rob-dctf", headers=painel).json()["servico"]
     assert det["status"] == "desconhecido" and det["intervalo_s"] == 60 and det["grupo"] == "Fiscal"
+    assert det["endereco"] == "http://192.168.1.120:3067"
     hb = client.post("/api/ingest/heartbeat", headers=ingest, json={"servico": env["APLOGS_SERVICO"],
                                                                      "intervalo_s": 60}).json()
     assert hb["status"] == "online"
@@ -486,6 +522,7 @@ def test_integracao_valida(client, painel):
     assert post(servico="!!!").status_code == 422
     assert post(repositorio="não é repo").status_code == 422
     assert post(url="ftp://x").status_code == 422
+    assert post(endereco="ftp://x").status_code == 422
     assert post(onde="marte").status_code == 422
 
 
@@ -501,7 +538,8 @@ def test_cliente_python_do_ambiente(monkeypatch):
     from pathlib import Path
     sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "clientes" / "python"))
     from aplogs_client import Aplogs
-    for k in ("APLOGS_URL", "APLOGS_KEY", "APLOGS_SERVICO", "APLOGS_NOME", "APLOGS_INTERVALO_S", "APLOGS_GRUPO"):
+    for k in ("APLOGS_URL", "APLOGS_KEY", "APLOGS_SERVICO", "APLOGS_NOME", "APLOGS_INTERVALO_S", "APLOGS_GRUPO",
+              "APLOGS_REPOSITORIO", "APLOGS_ENDERECO"):
         monkeypatch.delenv(k, raising=False)
     import pytest
     with pytest.raises(ValueError):
@@ -512,9 +550,13 @@ def test_cliente_python_do_ambiente(monkeypatch):
     monkeypatch.setenv("APLOGS_NOME", "Robô Env")
     monkeypatch.setenv("APLOGS_INTERVALO_S", "45")
     monkeypatch.setenv("APLOGS_GRUPO", "G")
+    monkeypatch.setenv("APLOGS_REPOSITORIO", "https://github.com/Grupo-Studio/aprap")
+    monkeypatch.setenv("APLOGS_ENDERECO", "http://192.168.1.100:3067")
     a = Aplogs.do_ambiente(versao="2.0")
     assert (a.url, a.chave, a.servico, a.nome, a.intervalo_s) == ("http://x:3070", "k", "robo-env", "Robô Env", 45)
     assert a.info["grupo"] == "G" and a.info["versao"] == "2.0"
+    assert a.info["repositorio"] == "https://github.com/Grupo-Studio/aprap"
+    assert a.info["endereco"] == "http://192.168.1.100:3067"
 
 
 def test_admin_do_apusers_e_gestor(client, ingest):
