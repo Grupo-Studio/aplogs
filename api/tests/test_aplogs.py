@@ -379,7 +379,7 @@ def test_endereco_pelo_heartbeat(client, ingest, painel):
     s = client.get("/api/servicos/end-a", headers=painel).json()["servico"]
     assert s["endereco"] == "http://192.168.1.100:3067"
     assert s["repositorio"] == "https://github.com/Grupo-Studio/aprap"
-    # o heartbeat sempre atualiza (é onde o serviço está agora); sem esquema vira http://
+    # endereço NOVO no heartbeat (o .env do serviço mudou) troca; sem esquema vira http://
     client.post("/api/ingest/heartbeat", headers=ingest, json={"servico": "end-a", "endereco": "10.0.0.5:3080"})
     assert client.get("/api/servicos/end-a", headers=painel).json()["servico"]["endereco"] == "http://10.0.0.5:3080"
     # heartbeat sem endereço não apaga; endereço estranho não derruba o heartbeat nem troca o que existe
@@ -401,6 +401,40 @@ def test_endereco_pelo_painel(client, ingest, painel):
     assert client.patch("/api/servicos/end-c", headers=painel, json={"endereco": ""}).json()["servico"]["endereco"] is None
     assert any(s["slug"] == "end-c" and "endereco" in s
                for s in client.get("/api/painel", headers=painel).json()["servicos"])
+
+
+def test_endereco_trocado_no_painel_nao_perde_historico(client, ingest, painel):
+    """A porta mudou (3071 → 3090) e o .env do serviço ainda manda a antiga: troca no painel, o heartbeat
+    não desfaz, e os heartbeats de antes continuam no mesmo serviço."""
+    for _ in range(3):
+        client.post("/api/ingest/heartbeat", headers=ingest,
+                    json={"servico": "end-d", "endereco": "http://192.168.1.100:3071"})
+    r = client.patch("/api/servicos/end-d", headers=painel, json={"endereco": "http://192.168.1.100:3090"})
+    assert r.status_code == 200
+    s = r.json()["servico"]
+    assert s["endereco"] == "http://192.168.1.100:3090" and s["endereco_editado"] is True
+    assert s["endereco_reportado"] == "http://192.168.1.100:3071"
+    # o serviço segue mandando o endereço velho (.env não mudou): fica o do painel
+    client.post("/api/ingest/heartbeat", headers=ingest, json={"servico": "end-d", "endereco": "http://192.168.1.100:3071"})
+    s = client.get("/api/servicos/end-d", headers=painel).json()
+    assert s["servico"]["endereco"] == "http://192.168.1.100:3090"
+    assert len(client.get("/api/heartbeats?servico=end-d", headers=painel).json()["heartbeats"]) == 4
+    # o .env mudou de verdade: vale o novo, e fica no log
+    client.post("/api/ingest/heartbeat", headers=ingest, json={"servico": "end-d", "endereco": "http://192.168.1.100:3095"})
+    s = client.get("/api/servicos/end-d", headers=painel).json()["servico"]
+    assert s["endereco"] == "http://192.168.1.100:3095" and s["endereco_editado"] is False
+    msgs = [l["mensagem"] for l in client.get("/api/logs?servico=end-d", headers=painel).json()["logs"]]
+    assert any("trocado no painel" in m and "3071 → http://192.168.1.100:3090" in m for m in msgs)
+    assert any("mudou (APLOGS_ENDERECO)" in m and "3090 → http://192.168.1.100:3095" in m for m in msgs)
+    # trocou no painel ANTES do serviço mandar endereço: o 1º envio (com o .env velho) não desfaz
+    client.post("/api/ingest/heartbeat", headers=ingest, json={"servico": "end-e"})
+    client.patch("/api/servicos/end-e", headers=painel, json={"endereco": "http://192.168.1.100:3091"})
+    client.post("/api/ingest/heartbeat", headers=ingest, json={"servico": "end-e", "endereco": "http://192.168.1.100:3082"})
+    s = client.get("/api/servicos/end-e", headers=painel).json()["servico"]
+    assert s["endereco"] == "http://192.168.1.100:3091" and s["endereco_reportado"] == "http://192.168.1.100:3082"
+    # e o .env gerado já sai com o endereço do painel
+    env = client.get("/api/integracao/end-e/env", headers=painel).json()["env"]
+    assert "APLOGS_ENDERECO=http://192.168.1.100:3091" in env
 
 
 # ── Login central: permissões por papel e atividade ──────────────────────────

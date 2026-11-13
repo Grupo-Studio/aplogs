@@ -224,3 +224,5 @@ pre.json { background: var(--cartao); border: 1px solid var(--borda); border-rad
   .info { grid-template-columns: 1fr; }
 }
 [hidden] { display: none !important; }
+.fantasma.mini { padding: 1px 8px; font-size: 11.5px; margin-left: 6px; vertical-align: 1px; }
+dl.info .dica { font-size: 11.5px; color: var(--fraco); margin-top: 3px; }

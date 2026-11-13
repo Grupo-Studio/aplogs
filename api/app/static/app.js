@@ -697,7 +697,9 @@ async function atualizarGaveta(completo = false) {
       <dt>Versão</dt><dd>${esc(s.versao || "—")}</dd>
       <dt>Repositório</dt><dd>${s.repositorio ? link(s.repositorio, repo(s).nome) : `<span class="fraco">— (preencha em Configuração, abaixo)</span>`}</dd>
       <dt>Rodando</dt><dd>${rodando(s) || `<span class="fraco">— (o serviço não mandou branch/commit)</span>`}</dd>
-      <dt>Endereço</dt><dd>${s.endereco ? linkEndereco(s, "mono") : `<span class="fraco">— (o serviço não mandou; dá para preencher em Configuração)</span>`}</dd>
+      <dt>Endereço</dt><dd>${s.endereco ? linkEndereco(s, "mono") : `<span class="fraco">— (o serviço não mandou; dá para preencher em Configuração)</span>`}
+        ${pode("gerenciar") ? `<button class="fantasma mini" type="button" id="g-endereco" title="Trocar o endereço (a porta mudou, por exemplo). O histórico continua.">✎ trocar</button>` : ""}
+        ${s.endereco_reportado && s.endereco_reportado !== s.endereco ? `<div class="dica">o serviço manda <span class="mono">${esc(s.endereco_reportado)}</span> no APLOGS_ENDERECO; vale o do painel até o .env dele mudar</div>` : ""}</dd>
       <dt>Host</dt><dd>${esc(s.host || "—")}${s.ambiente ? ` · ${esc(s.ambiente)}` : ""}</dd>
       <dt>Conectado em</dt><dd>${esc(completa(s.criado_em))}</dd>
     </dl>
@@ -724,7 +726,7 @@ async function atualizarGaveta(completo = false) {
       <label>Grupo (agrupa os cards)<input name="grupo" value="${esc(s.grupo || "")}" maxlength="80" placeholder="ex.: Receita, RPA, APIs"></label>
       <label>Repositório no GitHub<input name="repositorio" value="${esc(s.repositorio || "")}" maxlength="300" placeholder="ex.: Grupo-Studio/aplogin ou a URL do repositório"></label>
       <label>Endereço do serviço na rede<input name="endereco" class="mono" value="${esc(s.endereco || "")}" maxlength="300" placeholder="ex.: http://192.168.1.100:3067">
-        <span class="dica">Se o serviço mandar APLOGS_ENDERECO no heartbeat, vale o que ele mandar.</span></label>
+        <span class="dica">Trocar aqui não apaga nada (heartbeats, logs e problemas continuam no mesmo serviço). Vale o que estiver aqui; o APLOGS_ENDERECO do serviço só troca de novo se o valor no .env dele mudar. Depois de salvar, "Copiar .env" já sai com o endereço novo.</span></label>
       <label>Tolerância sem heartbeat, em segundos (vazio = automática: ${Math.max(3 * s.intervalo_s, 60)} s)
         <input name="tolerancia_s" type="number" min="0" value="${s.tolerancia_s ?? ""}"></label>
       <label class="chave"><input name="monitorar" type="checkbox" ${s.monitorar ? "checked" : ""}> Monitorar (desligado = sem alerta de offline)</label>
@@ -760,6 +762,12 @@ async function atualizarGaveta(completo = false) {
   $("#g-apagar").onclick = () => excluirServico(s);
   const bx = $("#g-excluir"); if (bx) bx.onclick = () => excluirServico(s);
   const be = $("#g-env"); if (be) be.onclick = () => mostrarEnv(s.slug, true);
+  const bend = $("#g-endereco"); if (bend) bend.onclick = () => {
+    const campo = $("#g-form").endereco;
+    campo.scrollIntoView({ behavior: "smooth", block: "center" });
+    campo.focus();
+    campo.select();
+  };
   if (estado.envAberto === slug && estado.envCache) desenharEnv(estado.envCache);
 }
 

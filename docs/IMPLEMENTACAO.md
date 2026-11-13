@@ -273,9 +273,13 @@ do slug único (rollback e releitura).
 1. Atualiza `nome` (se não foi editado no painel), `descricao` (idem), `grupo`, `versao`, `host`, `ambiente`
    quando vierem.
 2. `intervalo_s` (1–86400) substitui o atual.
-3. `endereco` (onde o serviço atende, `http(s)://host[:porta]`) é normalizado e **sempre substitui** quando vem
-   (sem esquema ganha `http://`); vazio não apaga; inválido é ignorado.
-   `repositorio` só é gravado se o serviço **ainda não tem** (quem troca é o painel); valor inválido é ignorado.
+3. `endereco` (onde o serviço atende, `http(s)://host[:porta]`) é normalizado (sem esquema ganha `http://`);
+   vazio não apaga; inválido é ignorado. Fica guardado em `endereco_reportado` e só substitui `endereco` quando
+   é **diferente do último que o serviço mandou** (o `.env` dele mudou). Endereço trocado no painel
+   (`endereco_editado`) vale sobre um `APLOGS_ENDERECO` que não mudou, inclusive no 1º envio depois da troca.
+   Toda troca vai para o log do serviço (`servicos.endereco_do_heartbeat` / `trocar_endereco_no_painel`).
+   Mudança de `host` ou `repositorio` também vai para o log ("outra máquina" / "outro repositório").
+   `repositorio` do heartbeat substitui o do painel (o `.env` do serviço é a fonte); valor inválido é ignorado.
    `branch`/`commit` sempre substituem (string vazia limpa).
 4. `status` é normalizado (`ok`, `degradado`, `erro`, `parando`; sinônimos em inglês e português; desconhecido = `ok`).
 5. Grava `ultimo_heartbeat_em`, `dados`, insere uma linha em `heartbeats` e chama `aplicar_status` (§8).

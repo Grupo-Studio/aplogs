@@ -10,7 +10,7 @@ Permissões (papel da pessoa no apusers; scripts com x-api-secret podem tudo):
 
   GET    /api/painel                      visão geral: serviços, status, linha do tempo de heartbeat, totais
   GET    /api/servicos/{slug}             detalhe de um serviço
-  PATCH  /api/servicos/{slug}             nome, descrição, grupo, repositório, tolerância, monitorar
+  PATCH  /api/servicos/{slug}             nome, descrição, grupo, repositório, endereço, tolerância, monitorar
   DELETE /api/servicos/{slug}             apaga o serviço e tudo dele
   GET    /api/logs                        logs (?servico=&nivel=&modulo=&q=&antes=&depois=&limite=)
   GET    /api/logs/modulos                módulos que aparecem nos logs (?servico=)
@@ -46,6 +46,7 @@ def servico_json(s: Servico) -> dict:
     return {
         "id": s.id, "slug": s.slug, "nome": s.nome, "descricao": s.descricao, "grupo": s.grupo,
         "versao": s.versao, "host": s.host, "ambiente": s.ambiente, "endereco": s.endereco,
+        "endereco_reportado": s.endereco_reportado, "endereco_editado": bool(s.endereco_editado),
         "repositorio": s.repositorio, "branch": s.branch, "commit": s.commit_sha,
         "status": s.status, "status_desde": iso(s.status_desde), "status_reportado": s.status_reportado,
         "mensagem": s.mensagem, "monitorar": s.monitorar, "intervalo_s": s.intervalo_s,
@@ -214,7 +215,7 @@ def editar_servico(slug: str, corpo: ServicoEdit, db: Session = Depends(get_db),
             raise HTTPException(422, str(e))
     if "endereco" in dados:
         try:
-            s.endereco = sv.normalizar_endereco(dados["endereco"])
+            sv.trocar_endereco_no_painel(db, s, dados["endereco"], _quem(ator))
         except ValueError as e:
             raise HTTPException(422, str(e))
     if "tolerancia_s" in dados:

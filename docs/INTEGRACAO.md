@@ -148,8 +148,12 @@ Mande a cada `intervalo_s` segundos (30 é um bom padrão).
 
 - Sem `http://` a aplogs completa (`192.168.1.100:3067` → `http://192.168.1.100:3067`). Só `http(s)` é aceito;
   valor inválido é ignorado (não derruba o heartbeat).
-- O heartbeat **sempre atualiza** (é onde o serviço está agora). Heartbeat sem `endereco` não apaga o que existe.
-  Também dá para preencher no painel (detalhe → Configuração), para serviços que não mandam.
+- O que o serviço manda vale quando **muda** (o `.env` dele mudou = ele foi para outro lugar). Heartbeat sem
+  `endereco` não apaga o que existe.
+- **Mudou a porta?** Troque no painel (detalhe → *Endereço* → ✎ trocar, ou Configuração). Nada é apagado: os
+  heartbeats, logs e problemas continuam no mesmo serviço. O painel vale mesmo que o serviço continue mandando o
+  endereço velho; só um valor **diferente** no `APLOGS_ENDERECO` dele troca de novo. Depois, *Copiar .env* já sai
+  com o endereço novo para colar no serviço. Toda troca (painel ou heartbeat) fica no log do serviço.
 - Num container, o serviço **não sabe** o IP da máquina nem a porta publicada: passe pelo `.env`
   (`APLOGS_ENDERECO`, que o *Gerenciar integração* já gera) e mande esse valor. Pelo mesmo motivo, `host`
   dentro de um container é o id do container, não o nome da máquina.
