@@ -45,7 +45,7 @@ TIMELINE_MIN = 60          # minutos na linha do tempo de heartbeat dos cards
 def servico_json(s: Servico) -> dict:
     return {
         "id": s.id, "slug": s.slug, "nome": s.nome, "descricao": s.descricao, "grupo": s.grupo,
-        "versao": s.versao, "host": s.host, "ambiente": s.ambiente,
+        "versao": s.versao, "host": s.host, "ambiente": s.ambiente, "endereco": s.endereco,
         "repositorio": s.repositorio, "branch": s.branch, "commit": s.commit_sha,
         "status": s.status, "status_desde": iso(s.status_desde), "status_reportado": s.status_reportado,
         "mensagem": s.mensagem, "monitorar": s.monitorar, "intervalo_s": s.intervalo_s,
@@ -192,6 +192,7 @@ class ServicoEdit(BaseModel):
     descricao:    str | None = None
     grupo:        str | None = Field(None, max_length=80)
     repositorio:  str | None = Field(None, max_length=300)          # vazio = tira o repositório
+    endereco:     str | None = Field(None, max_length=300)          # vazio = tira o endereço
     tolerancia_s: int | None = Field(None, ge=0, le=7 * 86400)      # 0 = automática
     monitorar:    bool | None = None
 
@@ -209,6 +210,11 @@ def editar_servico(slug: str, corpo: ServicoEdit, db: Session = Depends(get_db),
     if "repositorio" in dados:
         try:
             s.repositorio = sv.normalizar_repositorio(dados["repositorio"])
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+    if "endereco" in dados:
+        try:
+            s.endereco = sv.normalizar_endereco(dados["endereco"])
         except ValueError as e:
             raise HTTPException(422, str(e))
     if "tolerancia_s" in dados:

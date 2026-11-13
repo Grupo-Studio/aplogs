@@ -55,6 +55,7 @@ class IntegracaoIn(BaseModel):
     descricao:   str | None = Field(None, max_length=2000)
     grupo:       str | None = Field(None, max_length=80)
     repositorio: str | None = Field(None, max_length=300)
+    endereco:    str | None = Field(None, max_length=300)            # onde o serviço atende (http://ip:porta)
     intervalo_s: int = Field(30, ge=5, le=86400)
     onde:        Literal["rede", "docker"] = "rede"                  # outra máquina | container na mesma máquina
     linguagem:   Literal["python", "node", "outro"] = "python"
@@ -67,6 +68,7 @@ def gerar(corpo: IntegracaoIn, request: Request, response: Response, db: Session
     try:
         slug = sv.normalizar_slug(corpo.servico)
         repositorio = sv.normalizar_repositorio(corpo.repositorio)
+        endereco = sv.normalizar_endereco(corpo.endereco)
     except ValueError as e:
         raise HTTPException(422, str(e))
     if corpo.onde == "docker":
@@ -99,6 +101,8 @@ def gerar(corpo: IntegracaoIn, request: Request, response: Response, db: Session
         s.descricao = descricao
     if repositorio:
         s.repositorio = repositorio
+    if endereco:
+        s.endereco = endereco
     if criado:
         sv.registrar_log(db, s, "INFO", f"Integração preparada no painel por {quem}. Aguardando o primeiro heartbeat.")
     db.commit()
@@ -109,6 +113,20 @@ def gerar(corpo: IntegracaoIn, request: Request, response: Response, db: Session
     return {"ok": True, "criado": criado, "servico": servico_json(s), "url": url, "env": env,
             "txt": gerar_txt(s, env, url, corpo.onde, corpo.linguagem, quem),
             "arquivo": f"aplogs-integracao-{s.slug}.txt"}
+
+
+@router.get("/{slug}/env")
+def env_do_servico(slug: str, request: Request, response: Response, onde: Literal["rede", "docker"] = "rede",
+                   db: Session = Depends(get_db), ator=Depends(auth.exigir("gerenciar"))):
+    """O .env de um serviço que já existe, num clique (sem formulário): é o mesmo bloco do "Gerenciar
+    integração", montado com o que a aplogs já sabe do serviço. Não muda nada no banco."""
+    s = sv.obter(db, slug)
+    if not s:
+        raise HTTPException(404, "serviço não encontrado")
+    url = URL_DOCKER if onde == "docker" else url_sugerida(request)
+    acesso.registrar_acao(ator, "env_copiado", s.slug, onde=onde)
+    response.headers.update(_SEM_CACHE)
+    return {"ok": True, "servico": s.slug, "onde": onde, "url": url, "env": gerar_env(s, url)}
 
 
 # ── .env ─────────────────────────────────────────────────────────────────────
@@ -137,6 +155,8 @@ def gerar_env(s: Servico, url: str) -> str:
         linhas.append(f"APLOGS_GRUPO={_valor_env(s.grupo)}")
     if s.repositorio:
         linhas.append(f"APLOGS_REPOSITORIO={_valor_env(s.repositorio)}")
+    if s.endereco:
+        linhas.append(f"APLOGS_ENDERECO={_valor_env(s.endereco)}")
     return "\n".join(linhas) + "\n"
 
 
@@ -183,6 +203,7 @@ const A = {
   url: process.env.APLOGS_URL, key: process.env.APLOGS_KEY, servico: process.env.APLOGS_SERVICO,
   nome: process.env.APLOGS_NOME, intervalo: Number(process.env.APLOGS_INTERVALO_S || 30),
   grupo: process.env.APLOGS_GRUPO, repositorio: process.env.APLOGS_REPOSITORIO,
+  endereco: process.env.APLOGS_ENDERECO,
 };
 const iniciadoEm = new Date().toISOString();
 let statusAtual = "ok", mensagemAtual = null;
@@ -199,7 +220,8 @@ async function aplogs(tipo, corpo) {        // nunca derruba o serviço
 
 const heartbeat = () => aplogs("heartbeat", {
   intervalo_s: A.intervalo, status: statusAtual, mensagem: mensagemAtual, iniciado_em: iniciadoEm,
-  grupo: A.grupo, repositorio: A.repositorio, versao: process.env.npm_package_version,
+  grupo: A.grupo, repositorio: A.repositorio, endereco: A.endereco, versao: process.env.npm_package_version,
+  branch: process.env.GIT_BRANCH, commit: process.env.GIT_COMMIT,
 });
 heartbeat();
 setInterval(heartbeat, A.intervalo * 1000).unref();
@@ -227,6 +249,7 @@ curl -X POST "$APLOGS_URL/api/ingest/heartbeat" -H "x-api-key: $APLOGS_KEY" \\
 
 # heartbeat só pela URL (cron, Agendador de Tarefas, Uptime Kuma...)
 curl "$APLOGS_URL/api/ingest/heartbeat/$APLOGS_SERVICO?key=$APLOGS_KEY&intervalo_s=$APLOGS_INTERVALO_S"
+#   (se o serviço atende na rede, acrescente &endereco=$APLOGS_ENDERECO)
 
 # uma linha de log
 curl -X POST "$APLOGS_URL/api/ingest/logs" -H "x-api-key: $APLOGS_KEY" \\

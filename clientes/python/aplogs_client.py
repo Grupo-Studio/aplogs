@@ -46,9 +46,10 @@ class Aplogs:
     def __init__(self, url: str, chave: str, servico: str, nome: str | None = None, intervalo_s: int = 30,
                  versao: str | None = None, grupo: str | None = None, descricao: str | None = None,
                  repositorio: str | None = None, branch: str | None = None, commit: str | None = None,
-                 timeout_s: float = 5, max_buffer: int = 5000):
+                 endereco: str | None = None, timeout_s: float = 5, max_buffer: int = 5000):
         """repositorio: "dono/repo" ou a URL do GitHub. branch/commit: o que está rodando
-        (sem informar, usa as variáveis de ambiente GIT_BRANCH / GIT_COMMIT, se existirem)."""
+        (sem informar, usa as variáveis de ambiente GIT_BRANCH / GIT_COMMIT, se existirem).
+        endereco: onde o serviço atende na rede, ex.: "http://192.168.1.100:3067" (vira link no painel)."""
         self.url = url.rstrip("/")
         self.chave = chave
         self.servico = servico
@@ -56,7 +57,7 @@ class Aplogs:
         self.intervalo_s = intervalo_s
         self.info = {"versao": versao, "grupo": grupo, "descricao": descricao, "host": socket.gethostname(),
                      "repositorio": repositorio, "branch": branch or os.getenv("GIT_BRANCH"),
-                     "commit": commit or os.getenv("GIT_COMMIT")}
+                     "commit": commit or os.getenv("GIT_COMMIT"), "endereco": endereco}
         self.timeout_s = timeout_s
         self.iniciado_em = _agora()
         self._status, self._mensagem, self._dados = "ok", None, None
@@ -70,14 +71,15 @@ class Aplogs:
         """O jeito mais simples: as variáveis que o painel gera em "Gerenciar integração".
 
         APLOGS_URL, APLOGS_KEY, APLOGS_SERVICO (obrigatórias) e, se houver, APLOGS_NOME,
-        APLOGS_INTERVALO_S, APLOGS_GRUPO, APLOGS_REPOSITORIO, APLOGS_VERSAO.
+        APLOGS_INTERVALO_S, APLOGS_GRUPO, APLOGS_REPOSITORIO, APLOGS_ENDERECO, APLOGS_VERSAO.
         `extra` sobrescreve o que veio do ambiente (ex.: versao="1.2")."""
         env = os.environ
         faltando = [n for n in ("APLOGS_URL", "APLOGS_KEY", "APLOGS_SERVICO") if not env.get(n)]
         if faltando:
             raise ValueError(f"aplogs: defina {', '.join(faltando)} no ambiente (veja 'Gerenciar integração' no painel)")
         campos = {"nome": env.get("APLOGS_NOME"), "grupo": env.get("APLOGS_GRUPO"),
-                  "repositorio": env.get("APLOGS_REPOSITORIO"), "versao": env.get("APLOGS_VERSAO")}
+                  "repositorio": env.get("APLOGS_REPOSITORIO"), "endereco": env.get("APLOGS_ENDERECO"),
+                  "versao": env.get("APLOGS_VERSAO")}
         try:
             campos["intervalo_s"] = int(env.get("APLOGS_INTERVALO_S") or 0) or None
         except ValueError:

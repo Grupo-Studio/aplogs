@@ -15,6 +15,8 @@ const estado = {
   probStatus: "abertos",
   gaveta: null,                // slug aberto na gaveta
   integracao: false,           // gaveta mostrando "Gerenciar integração"
+  envAberto: null,             // slug com a caixa do .env aberta na gaveta
+  envCache: null,
   timers: [],
   usuario: null,               // quem entrou (login central): {nome, email, papel, permissoes}
 };
@@ -86,6 +88,11 @@ function rodando(s) {
   const r = repo(s);
   return [s.branch && link(r.branchUrl, s.branch, "mono"), s.commit && link(r.commitUrl, r.commitCurto, "mono")]
     .filter(Boolean).join(` <span class="fraco">@</span> `);
+}
+
+// Endereço do serviço na rede (o backend só guarda http(s)): link mostrando só host:porta
+function linkEndereco(s, cls = "") {
+  return s.endereco ? link(s.endereco, s.endereco.replace(/^https?:\/\//i, ""), cls) : "";
 }
 
 function linhaRepo(s) {
@@ -412,7 +419,7 @@ function cardServico(s) {
     ${linhaRepo(s)}
     <div class="rodape-card">
       <span>♥ ${relativo(s.ultimo_heartbeat_em)}</span>
-      <span>${[s.versao && `v${esc(s.versao)}`, s.host && esc(s.host)].filter(Boolean).join(" · ")}</span>
+      <span>${[s.versao && `v${esc(s.versao)}`, s.endereco ? linkEndereco(s, "mono") : s.host && esc(s.host)].filter(Boolean).join(" · ")}</span>
     </div>
   </article>`;
 }
@@ -429,7 +436,7 @@ function renderServicos(servicos) {
 }
 
 $("#grade-servicos").addEventListener("click", e => {
-  if (e.target.closest("a")) return;          // link do repositório: abre o GitHub, não a gaveta
+  if (e.target.closest("a")) return;          // link do repositório/endereço: abre o link, não a gaveta
   const card = e.target.closest(".card");
   if (card) abrirGaveta(card.dataset.slug);
 });
@@ -640,6 +647,7 @@ function cardFila(f) {
 
 function abrirGaveta(slug) {
   estado.gaveta = slug;
+  estado.envAberto = estado.envCache = null;
   $("#gaveta").hidden = false;
   $("#gaveta-fundo").hidden = false;
   $("#gaveta").innerHTML = `<p class="mudo">Carregando…</p>`;
@@ -649,6 +657,7 @@ function abrirGaveta(slug) {
 function fecharGaveta() {
   estado.gaveta = null;
   estado.integracao = false;
+  estado.envAberto = estado.envCache = null;
   $("#gaveta").hidden = true;
   $("#gaveta-fundo").hidden = true;
 }
@@ -660,7 +669,7 @@ async function atualizarGaveta(completo = false) {
   const slug = estado.gaveta;
   if (!slug) return;
   // não redesenha enquanto o usuário edita
-  if (!completo && $("#gaveta").contains(document.activeElement) && document.activeElement.matches("input, textarea")) return;
+  if (!completo && $("#gaveta").contains(document.activeElement) && document.activeElement.matches("input, textarea, select")) return;
   let r;
   try { r = await api(`/api/servicos/${encodeURIComponent(slug)}`); } catch (err) { $("#gaveta").innerHTML = `<p class="erro">${esc(err.message)}</p>`; return; }
   if (estado.gaveta !== slug) return;
@@ -670,9 +679,11 @@ async function atualizarGaveta(completo = false) {
     <div class="gaveta-topo">
       <div><h2>${esc(s.nome)}</h2><div class="slug mono fraco">${esc(s.slug)}</div></div>
       <div style="display:flex;gap:8px;align-items:center">${pilula(s.status)}
-        ${pode("gerenciar") ? `<button class="fantasma perigo" id="g-excluir" title="Apagar este serviço e todos os dados dele">🗑 Excluir</button>` : ""}
+        ${pode("gerenciar") ? `<button class="fantasma" id="g-env" title="Copia as variáveis que este serviço precisa no .env">⧉ Copiar .env</button>
+        <button class="fantasma perigo" id="g-excluir" title="Apagar este serviço e todos os dados dele">🗑 Excluir</button>` : ""}
         <button class="fantasma" id="g-fechar">✕</button></div>
     </div>
+    <div id="g-env-caixa" ${estado.envAberto === slug ? "" : "hidden"}></div>
     ${s.descricao ? `<p class="mudo">${esc(s.descricao)}</p>` : ""}
     ${linhaTempo(s.timeline)}
 
@@ -686,6 +697,7 @@ async function atualizarGaveta(completo = false) {
       <dt>Versão</dt><dd>${esc(s.versao || "—")}</dd>
       <dt>Repositório</dt><dd>${s.repositorio ? link(s.repositorio, repo(s).nome) : `<span class="fraco">— (preencha em Configuração, abaixo)</span>`}</dd>
       <dt>Rodando</dt><dd>${rodando(s) || `<span class="fraco">— (o serviço não mandou branch/commit)</span>`}</dd>
+      <dt>Endereço</dt><dd>${s.endereco ? linkEndereco(s, "mono") : `<span class="fraco">— (o serviço não mandou; dá para preencher em Configuração)</span>`}</dd>
       <dt>Host</dt><dd>${esc(s.host || "—")}${s.ambiente ? ` · ${esc(s.ambiente)}` : ""}</dd>
       <dt>Conectado em</dt><dd>${esc(completa(s.criado_em))}</dd>
     </dl>
@@ -710,7 +722,9 @@ async function atualizarGaveta(completo = false) {
       <label>Nome<input name="nome" value="${esc(s.nome)}" maxlength="160"></label>
       <label>Descrição<textarea name="descricao" rows="2">${esc(s.descricao || "")}</textarea></label>
       <label>Grupo (agrupa os cards)<input name="grupo" value="${esc(s.grupo || "")}" maxlength="80" placeholder="ex.: Receita, RPA, APIs"></label>
-      <label>Repositório no GitHub<input name="repositorio" value="${esc(s.repositorio || "")}" maxlength="300" placeholder="ex.: Grupo-Studio/aplogin ou a URL do repositório"><span class="dica">Se o serviço manda o repositório no heartbeat (APLOGS_REPOSITORIO), vale o dele.</span></label>
+      <label>Repositório no GitHub<input name="repositorio" value="${esc(s.repositorio || "")}" maxlength="300" placeholder="ex.: Grupo-Studio/aplogin ou a URL do repositório"></label>
+      <label>Endereço do serviço na rede<input name="endereco" class="mono" value="${esc(s.endereco || "")}" maxlength="300" placeholder="ex.: http://192.168.1.100:3067">
+        <span class="dica">Se o serviço mandar APLOGS_ENDERECO no heartbeat, vale o que ele mandar.</span></label>
       <label>Tolerância sem heartbeat, em segundos (vazio = automática: ${Math.max(3 * s.intervalo_s, 60)} s)
         <input name="tolerancia_s" type="number" min="0" value="${s.tolerancia_s ?? ""}"></label>
       <label class="chave"><input name="monitorar" type="checkbox" ${s.monitorar ? "checked" : ""}> Monitorar (desligado = sem alerta de offline)</label>
@@ -734,7 +748,7 @@ async function atualizarGaveta(completo = false) {
     try {
       await api(`/api/servicos/${encodeURIComponent(s.slug)}`, { method: "PATCH", body: {
         nome: f.nome.value.trim(), descricao: f.descricao.value, grupo: f.grupo.value,
-        repositorio: f.repositorio.value.trim(),
+        repositorio: f.repositorio.value.trim(), endereco: f.endereco.value.trim(),
         tolerancia_s: tol === "" ? 0 : Number(tol), monitorar: f.monitorar.checked } });
       toast("Salvo.", "var(--verde)");
       document.activeElement.blur();
@@ -745,6 +759,55 @@ async function atualizarGaveta(completo = false) {
   $("#g-integracao").onclick = () => abrirIntegracao(s);
   $("#g-apagar").onclick = () => excluirServico(s);
   const bx = $("#g-excluir"); if (bx) bx.onclick = () => excluirServico(s);
+  const be = $("#g-env"); if (be) be.onclick = () => mostrarEnv(s.slug, true);
+  if (estado.envAberto === slug && estado.envCache) desenharEnv(estado.envCache);
+}
+
+// ── .env num clique ─────────────────────────────────────────────────────────
+// Botão "Copiar .env" no detalhe do serviço: busca o bloco pronto, mostra e já copia.
+// Fica aberto enquanto a gaveta é redesenhada (a cada 5 s) sem buscar de novo.
+
+async function mostrarEnv(slug, copiar, onde = "rede") {
+  let r;
+  try { r = await api(`/api/integracao/${encodeURIComponent(slug)}/env?onde=${onde}`); } catch (err) {
+    toast(esc(err.message), "var(--vermelho)");
+    return;
+  }
+  if (estado.gaveta !== slug) return;
+  estado.envAberto = slug;
+  estado.envCache = r;
+  desenharEnv(r);
+  if (copiar) {
+    const ok = await copiarTexto(r.env, $("#g-env-texto"));
+    toast(ok ? "Copiado. Cole no .env do serviço." : "Não deu para copiar sozinho: o texto ficou selecionado, use Ctrl+C.",
+      ok ? "var(--verde)" : "var(--amarelo)");
+  }
+}
+
+function desenharEnv(r) {
+  const caixa = $("#g-env-caixa");
+  if (!caixa) return;
+  const local = r.onde === "rede" && /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/i.test(r.url);
+  caixa.hidden = false;
+  caixa.innerHTML = `
+    <div class="env-caixa">
+      <div class="env-topo"><b>.env do serviço</b>
+        <select id="g-env-onde" title="De onde o serviço chama a aplogs">
+          <option value="rede" ${r.onde === "rede" ? "selected" : ""}>Roda em outra máquina</option>
+          <option value="docker" ${r.onde === "docker" ? "selected" : ""}>Container nesta máquina</option>
+        </select>
+        <button class="fantasma" id="g-env-fechar" title="Fechar">✕</button></div>
+      <textarea class="codigo" id="g-env-texto" readonly rows="${r.env.trim().split("\n").length}" spellcheck="false">${esc(r.env)}</textarea>
+      ${local ? `<p class="dica atencao">APLOGS_URL saiu como ${esc(r.url)} porque o painel foi aberto por aí: troque pelo IP da máquina da aplogs (ou defina APLOGS_URL_PUBLICA).</p>` : ""}
+      <div class="integracao-acoes"><button class="botao" id="g-env-copiar">Copiar</button></div>
+      <p class="aviso-chave">⚠ Tem a chave de envio da aplogs: trate como senha e não suba o .env para o git.</p>
+    </div>`;
+  $("#g-env-copiar").onclick = async () => {
+    const ok = await copiarTexto(r.env, $("#g-env-texto"));
+    toast(ok ? "Copiado." : "O texto ficou selecionado, use Ctrl+C.", ok ? "var(--verde)" : "var(--amarelo)");
+  };
+  $("#g-env-onde").onchange = e => mostrarEnv(r.servico, false, e.target.value);
+  $("#g-env-fechar").onclick = () => { estado.envAberto = null; estado.envCache = null; caixa.hidden = true; caixa.innerHTML = ""; };
 }
 
 async function excluirServico(s) {
@@ -825,6 +888,8 @@ async function abrirIntegracao(s = null) {
       <label>Grupo (agrupa os cards)<input name="grupo" maxlength="80" value="${esc(s?.grupo || "")}" placeholder="ex.: Receita, RPA, APIs"></label>
       <label>Descrição<textarea name="descricao" rows="2" maxlength="2000">${esc(s?.descricao || "")}</textarea></label>
       <label>Repositório no GitHub<input name="repositorio" maxlength="300" value="${esc(s?.repositorio || "")}" placeholder="ex.: Grupo-Studio/robo-dctf"></label>
+      <label>Endereço do serviço na rede<input name="endereco" class="mono" maxlength="300" value="${esc(s?.endereco || "")}" placeholder="ex.: http://192.168.1.100:3067">
+        <span class="dica">Onde ele atende (IP:porta da máquina). Vazio se o serviço não atende pela rede (robô, script).</span></label>
       <label>Heartbeat a cada (segundos)<input name="intervalo_s" type="number" min="5" max="86400" required value="${s?.intervalo_s || sug.intervalo_padrao_s}">
         <span class="dica" id="i-tolerancia"></span></label>
       <label>Onde o serviço roda
@@ -870,7 +935,7 @@ async function abrirIntegracao(s = null) {
       const r = await api("/api/integracao", { method: "POST", body: {
         servico: slugDe(f.servico.value), nome: f.nome.value.trim(), grupo: f.grupo.value.trim() || null,
         descricao: f.descricao.value.trim() || null, repositorio: f.repositorio.value.trim() || null,
-        intervalo_s: Number(f.intervalo_s.value), onde: f.onde.value, linguagem: f.linguagem.value,
+        endereco: f.endereco.value.trim() || null, intervalo_s: Number(f.intervalo_s.value), onde: f.onde.value, linguagem: f.linguagem.value,
         url: f.url.value.trim() || null } });
       if (!estado.integracao) return;
       f.servico.value = r.servico.slug;
