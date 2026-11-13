@@ -516,6 +516,34 @@ def test_integracao_gera_env_e_txt(client, ingest, painel):
     assert r["url"] == "http://testserver" and "curl" in r["txt"]
 
 
+def test_env_num_clique(client, ingest, painel):
+    client.post("/api/ingest/heartbeat", headers=ingest, json={
+        "servico": "apusers", "nome": "APUsers", "grupo": "Plataforma", "endereco": "http://192.168.1.100:3080",
+        "repositorio": "https://github.com/Grupo-Studio/apusers"})
+    r = client.get("/api/integracao/apusers/env", headers=painel)
+    assert r.status_code == 200 and r.headers["cache-control"] == "no-store"
+    env = dict(l.split("=", 1) for l in r.json()["env"].splitlines() if l and not l.startswith("#"))
+    assert env == {"APLOGS_URL": "http://testserver", "APLOGS_KEY": "chave-teste", "APLOGS_SERVICO": "apusers",
+                   "APLOGS_NOME": "APUsers", "APLOGS_INTERVALO_S": "30", "APLOGS_GRUPO": "Plataforma",
+                   "APLOGS_REPOSITORIO": "https://github.com/Grupo-Studio/apusers",
+                   "APLOGS_ENDERECO": "http://192.168.1.100:3080"}
+    r = client.get("/api/integracao/apusers/env?onde=docker", headers=painel).json()
+    assert r["url"] == "http://aplogs-api:8000" and "APLOGS_URL=http://aplogs-api:8000" in r["env"]
+    assert client.get("/api/integracao/nao-existe/env", headers=painel).status_code == 404
+    assert client.get("/api/integracao/apusers/env?onde=marte", headers=painel).status_code == 422
+
+
+def test_env_num_clique_so_gestor(client, ingest):
+    from conftest import apusers
+    apusers("/_mock/limpar", {})
+    client.post("/api/ingest/heartbeat", headers=ingest, json={"servico": "env-gestor"})
+    for email, senha, esperado in (("ana@exemplo.test", "senha-ana", 403), ("gil@exemplo.test", "senha-gil", 200)):
+        client.cookies.clear()
+        assert client.post("/api/auth/login", json={"email": email, "senha": senha}).status_code == 200
+        assert client.get("/api/integracao/env-gestor/env").status_code == esperado
+    client.cookies.clear()
+
+
 def test_integracao_valida(client, painel):
     def post(**kw):
         return client.post("/api/integracao", headers=painel, json={"servico": "robo-v", "nome": "V", **kw})
