@@ -20,6 +20,7 @@ O primeiro serviço conectado é a **aplogin** (branch Receita), que aparece com
 |---|---|
 | **Heartbeat** | Cada serviço manda "estou vivo" a cada N segundos. Sem heartbeat por mais que a tolerância (padrão: 3 × intervalo, mínimo 60 s), o serviço fica **offline**, ganha um log e um **problema crítico**, que é resolvido sozinho quando ele volta. Desligamento normal (heartbeat `parando`) aparece como "foi parado", não como queda. |
 | **Projetos** | Cada serviço mostra o repositório do GitHub e qual **branch @ commit** está rodando, com link (o serviço manda no heartbeat ou você preenche no painel). |
+| **Endereço** | Onde o serviço atende na rede interna (ex.: `http://192.168.1.100:3067`), com link no card. Vem no heartbeat (`APLOGS_ENDERECO`) ou é preenchido no painel. |
 | **Status** | `online` · `degradado` (o serviço reportou problema) · `offline` · `sem heartbeat` · `pausado` (monitoramento desligado no painel). Linha do tempo da última hora em cada card. |
 | **Logs** | Busca, filtro por serviço/nível/módulo, modo ao vivo, traceback e contexto expansíveis. |
 | **Problemas** | Abertos pelos serviços (com deduplicação por chave e contagem de ocorrências) ou pelo monitor. Reconhecer / resolver no painel. |
@@ -27,7 +28,7 @@ O primeiro serviço conectado é a **aplogin** (branch Receita), que aparece com
 | **Filas** | Na fila / rodando / concluídos / erros de cada fila, com gráfico da última hora. |
 
 Os serviços **se cadastram sozinhos** no primeiro envio. No painel dá para renomear, agrupar, ligar ao
-repositório do GitHub, mudar a tolerância, pausar o monitoramento ou apagar um serviço.
+repositório do GitHub, informar o endereço na rede, mudar a tolerância, pausar o monitoramento ou apagar um serviço.
 
 Atualizar a aplogs não perde dados: no arranque ela cria sozinha as colunas novas no banco que já existe.
 
@@ -48,7 +49,7 @@ servidor: o navegador nunca fala com o apusers.
   |---|:-:|:-:|:-:|
   | Ver serviços, logs, problemas, jobs e filas | ✓ | ✓ | ✓ |
   | Reconhecer / resolver problemas | | ✓ | ✓ |
-  | Editar (nome, grupo, repositório, monitoramento) e apagar serviços | | | ✓ |
+  | Editar (nome, grupo, repositório, endereço, monitoramento) e apagar serviços | | | ✓ |
   | Gerenciar integração (gera o `.env` com a chave de envio) | | | ✓ |
 
   O que o papel não permite some da tela, e a API confere de novo (403 `sem_permissao`). Tirar o acesso,
@@ -101,9 +102,9 @@ Não precisa configurar nada aqui: o serviço chama a API e **se cadastra sozinh
 Guia rápido (curl, Node, Python, rede Docker) em **[docs/INTEGRACAO.md](docs/INTEGRACAO.md)**.
 
 **Pelo painel (gestor):** em *Serviços → Gerenciar integração* (ou no detalhe de um serviço) você diz o nome, o
-grupo, o repositório, o intervalo de heartbeat, onde o serviço roda e a linguagem. A aplogs já cadastra o serviço
+grupo, o repositório, o endereço do serviço na rede, o intervalo de heartbeat, onde o serviço roda e a linguagem. A aplogs já cadastra o serviço
 (aparece como "Sem heartbeat") e gera o bloco para colar no `.env` dele (`APLOGS_URL`, `APLOGS_KEY`,
-`APLOGS_SERVICO`...) e um `.txt` com o passo a passo e o código pronto (Python, Node ou curl). O endereço que vai no
+`APLOGS_SERVICO`, `APLOGS_ENDERECO`...) e um `.txt` com o passo a passo e o código pronto (Python, Node ou curl). O endereço que vai no
 `.env` é o pelo qual o painel foi aberto; para fixar outro (ex.: o IP da máquina), use `APLOGS_URL_PUBLICA`.
 Como o `.env` leva a chave de envio, só o papel gestor vê o botão.
 

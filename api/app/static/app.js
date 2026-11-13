@@ -88,6 +88,11 @@ function rodando(s) {
     .filter(Boolean).join(` <span class="fraco">@</span> `);
 }
 
+// Endereço do serviço na rede (o backend só guarda http(s)): link mostrando só host:porta
+function linkEndereco(s, cls = "") {
+  return s.endereco ? link(s.endereco, s.endereco.replace(/^https?:\/\//i, ""), cls) : "";
+}
+
 function linhaRepo(s) {
   if (!s.repositorio && !s.branch && !s.commit) return "";
   const r = repo(s);
@@ -412,7 +417,7 @@ function cardServico(s) {
     ${linhaRepo(s)}
     <div class="rodape-card">
       <span>♥ ${relativo(s.ultimo_heartbeat_em)}</span>
-      <span>${[s.versao && `v${esc(s.versao)}`, s.host && esc(s.host)].filter(Boolean).join(" · ")}</span>
+      <span>${[s.versao && `v${esc(s.versao)}`, s.endereco ? linkEndereco(s, "mono") : s.host && esc(s.host)].filter(Boolean).join(" · ")}</span>
     </div>
   </article>`;
 }
@@ -429,7 +434,7 @@ function renderServicos(servicos) {
 }
 
 $("#grade-servicos").addEventListener("click", e => {
-  if (e.target.closest("a")) return;          // link do repositório: abre o GitHub, não a gaveta
+  if (e.target.closest("a")) return;          // link do repositório/endereço: abre o link, não a gaveta
   const card = e.target.closest(".card");
   if (card) abrirGaveta(card.dataset.slug);
 });
@@ -686,6 +691,7 @@ async function atualizarGaveta(completo = false) {
       <dt>Versão</dt><dd>${esc(s.versao || "—")}</dd>
       <dt>Repositório</dt><dd>${s.repositorio ? link(s.repositorio, repo(s).nome) : `<span class="fraco">— (preencha em Configuração, abaixo)</span>`}</dd>
       <dt>Rodando</dt><dd>${rodando(s) || `<span class="fraco">— (o serviço não mandou branch/commit)</span>`}</dd>
+      <dt>Endereço</dt><dd>${s.endereco ? linkEndereco(s, "mono") : `<span class="fraco">— (o serviço não mandou; dá para preencher em Configuração)</span>`}</dd>
       <dt>Host</dt><dd>${esc(s.host || "—")}${s.ambiente ? ` · ${esc(s.ambiente)}` : ""}</dd>
       <dt>Conectado em</dt><dd>${esc(completa(s.criado_em))}</dd>
     </dl>
@@ -711,6 +717,8 @@ async function atualizarGaveta(completo = false) {
       <label>Descrição<textarea name="descricao" rows="2">${esc(s.descricao || "")}</textarea></label>
       <label>Grupo (agrupa os cards)<input name="grupo" value="${esc(s.grupo || "")}" maxlength="80" placeholder="ex.: Receita, RPA, APIs"></label>
       <label>Repositório no GitHub<input name="repositorio" value="${esc(s.repositorio || "")}" maxlength="300" placeholder="ex.: Grupo-Studio/aplogin ou a URL do repositório"></label>
+      <label>Endereço do serviço na rede<input name="endereco" class="mono" value="${esc(s.endereco || "")}" maxlength="300" placeholder="ex.: http://192.168.1.100:3067">
+        <span class="dica">Se o serviço mandar APLOGS_ENDERECO no heartbeat, vale o que ele mandar.</span></label>
       <label>Tolerância sem heartbeat, em segundos (vazio = automática: ${Math.max(3 * s.intervalo_s, 60)} s)
         <input name="tolerancia_s" type="number" min="0" value="${s.tolerancia_s ?? ""}"></label>
       <label class="chave"><input name="monitorar" type="checkbox" ${s.monitorar ? "checked" : ""}> Monitorar (desligado = sem alerta de offline)</label>
@@ -734,7 +742,7 @@ async function atualizarGaveta(completo = false) {
     try {
       await api(`/api/servicos/${encodeURIComponent(s.slug)}`, { method: "PATCH", body: {
         nome: f.nome.value.trim(), descricao: f.descricao.value, grupo: f.grupo.value,
-        repositorio: f.repositorio.value.trim(),
+        repositorio: f.repositorio.value.trim(), endereco: f.endereco.value.trim(),
         tolerancia_s: tol === "" ? 0 : Number(tol), monitorar: f.monitorar.checked } });
       toast("Salvo.", "var(--verde)");
       document.activeElement.blur();
@@ -825,6 +833,8 @@ async function abrirIntegracao(s = null) {
       <label>Grupo (agrupa os cards)<input name="grupo" maxlength="80" value="${esc(s?.grupo || "")}" placeholder="ex.: Receita, RPA, APIs"></label>
       <label>Descrição<textarea name="descricao" rows="2" maxlength="2000">${esc(s?.descricao || "")}</textarea></label>
       <label>Repositório no GitHub<input name="repositorio" maxlength="300" value="${esc(s?.repositorio || "")}" placeholder="ex.: Grupo-Studio/robo-dctf"></label>
+      <label>Endereço do serviço na rede<input name="endereco" class="mono" maxlength="300" value="${esc(s?.endereco || "")}" placeholder="ex.: http://192.168.1.100:3067">
+        <span class="dica">Onde ele atende (IP:porta da máquina). Vazio se o serviço não atende pela rede (robô, script).</span></label>
       <label>Heartbeat a cada (segundos)<input name="intervalo_s" type="number" min="5" max="86400" required value="${s?.intervalo_s || sug.intervalo_padrao_s}">
         <span class="dica" id="i-tolerancia"></span></label>
       <label>Onde o serviço roda
@@ -870,7 +880,7 @@ async function abrirIntegracao(s = null) {
       const r = await api("/api/integracao", { method: "POST", body: {
         servico: slugDe(f.servico.value), nome: f.nome.value.trim(), grupo: f.grupo.value.trim() || null,
         descricao: f.descricao.value.trim() || null, repositorio: f.repositorio.value.trim() || null,
-        intervalo_s: Number(f.intervalo_s.value), onde: f.onde.value, linguagem: f.linguagem.value,
+        endereco: f.endereco.value.trim() || null, intervalo_s: Number(f.intervalo_s.value), onde: f.onde.value, linguagem: f.linguagem.value,
         url: f.url.value.trim() || null } });
       if (!estado.integracao) return;
       f.servico.value = r.servico.slug;

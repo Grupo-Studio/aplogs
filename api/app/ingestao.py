@@ -47,6 +47,7 @@ class HeartbeatIn(BaseModel):
     versao:      str | None = Field(None, max_length=80)
     host:        str | None = Field(None, max_length=160)
     ambiente:    str | None = Field(None, max_length=40)
+    endereco:    str | None = Field(None, max_length=300)   # onde o serviço atende: http://192.168.1.100:3067
     repositorio: str | None = Field(None, max_length=300)   # dono/repo ou URL do GitHub
     branch:      str | None = Field(None, max_length=120)   # branch que está rodando
     commit:      str | None = Field(None, max_length=64)    # commit que está rodando (sha)
@@ -64,14 +65,14 @@ def heartbeat(hb: HeartbeatIn, db: Session = Depends(get_db)):
 
 @router.api_route("/heartbeat/{servico}", methods=["GET", "POST"])
 def heartbeat_url(servico: str, status: str = "ok", mensagem: str | None = None, intervalo_s: int | None = None,
-                  nome: str | None = None, db: Session = Depends(get_db)):
+                  nome: str | None = None, endereco: str | None = None, db: Session = Depends(get_db)):
     """Heartbeat sem corpo, para quem só consegue chamar uma URL:
     curl "http://<ip>:3070/api/ingest/heartbeat/robo-x?key=<chave>&intervalo_s=300" """
     if intervalo_s is not None and not 1 <= intervalo_s <= 86400:
         raise HTTPException(422, "intervalo_s deve ficar entre 1 e 86400")
     try:
         hb = HeartbeatIn(servico=servico, status=status, mensagem=mensagem, intervalo_s=intervalo_s,
-                         nome=sv.corta(nome, 160))
+                         nome=sv.corta(nome, 160), endereco=endereco)
     except ValidationError as e:
         raise HTTPException(422, "; ".join(f"{'.'.join(map(str, x['loc']))}: {x['msg']}" for x in e.errors()))
     return _registrar_heartbeat(db, hb)
@@ -93,6 +94,11 @@ def _registrar_heartbeat(db: Session, hb: HeartbeatIn) -> dict:
             s.repositorio = sv.normalizar_repositorio(hb.repositorio)
         except ValueError:
             pass                                    # repositório estranho não derruba o heartbeat
+    if hb.endereco:                                 # sempre atualiza: é onde o serviço está atendendo agora
+        try:
+            s.endereco = sv.normalizar_endereco(hb.endereco)
+        except ValueError:
+            pass                                    # endereço estranho não derruba o heartbeat
     if hb.branch is not None:
         s.branch = hb.branch.strip() or None
     if hb.commit is not None:

@@ -125,7 +125,7 @@ também é síncrono. As tarefas do monitor rodam no event loop mas delegam o tr
 
 | Tabela | Chave / unicidade | Papel | Índices |
 |---|---|---|---|
-| `servicos` | `id`; `slug` único | Um por serviço. Guarda metadados (nome, grupo, versão, host, ambiente, repositório/branch/commit), config de monitoramento (`intervalo_s`, `tolerancia_s`, `monitorar`), estado (`status`, `status_desde`, `status_reportado`, `mensagem`, `ultimo_heartbeat_em`, `iniciado_em`) e `dados` (JSON do último heartbeat). `nome_editado` impede o heartbeat de sobrescrever nome/descrição editados no painel. | — |
+| `servicos` | `id`; `slug` único | Um por serviço. Guarda metadados (nome, grupo, versão, host, ambiente, endereço, repositório/branch/commit), config de monitoramento (`intervalo_s`, `tolerancia_s`, `monitorar`), estado (`status`, `status_desde`, `status_reportado`, `mensagem`, `ultimo_heartbeat_em`, `iniciado_em`) e `dados` (JSON do último heartbeat). `nome_editado` impede o heartbeat de sobrescrever nome/descrição editados no painel. | — |
 | `heartbeats` | `id` (bigint) | Cada heartbeat recebido; base da linha do tempo. | `(servico_id, recebido_em)`, `(recebido_em)` |
 | `logs` | `id` (bigint) | Linhas de log. `ts` = quando aconteceu (no serviço), `recebido_em` = chegada. `nivel_num` (10–50) permite filtro "nível mínimo". Logs gerados pela própria aplogs usam `modulo = "aplogs"`. | `(servico_id, id)`, `(nivel_num, id)`, `(recebido_em)` |
 | `problemas` | `id` | Incidentes. `chave` deduplica (só um aberto por serviço+chave). `status`: aberto → reconhecido → resolvido. `origem`: `servico` ou `monitor`. `ocorrencias`, `primeira_vez`, `ultima_vez`, `resolvido_por`. | `(servico_id, chave, status)`, `(status)` |
@@ -273,7 +273,9 @@ do slug único (rollback e releitura).
 1. Atualiza `nome` (se não foi editado no painel), `descricao` (idem), `grupo`, `versao`, `host`, `ambiente`
    quando vierem.
 2. `intervalo_s` (1–86400) substitui o atual.
-3. `repositorio` só é gravado se o serviço **ainda não tem** (quem troca é o painel); valor inválido é ignorado.
+3. `endereco` (onde o serviço atende, `http(s)://host[:porta]`) é normalizado e **sempre substitui** quando vem
+   (sem esquema ganha `http://`); vazio não apaga; inválido é ignorado.
+   `repositorio` só é gravado se o serviço **ainda não tem** (quem troca é o painel); valor inválido é ignorado.
    `branch`/`commit` sempre substituem (string vazia limpa).
 4. `status` é normalizado (`ok`, `degradado`, `erro`, `parando`; sinônimos em inglês e português; desconhecido = `ok`).
 5. Grava `ultimo_heartbeat_em`, `dados`, insere uma linha em `heartbeats` e chama `aplicar_status` (§8).
@@ -376,7 +378,7 @@ Rotas de leitura e gestão (cookie ou `x-api-secret`). Resumo; detalhes de parâ
 |---|---|
 | `GET /api/painel` | Todos os serviços (ordem grupo, nome) + linha do tempo + agregados: problemas abertos por severidade, erros (≥ 40) e avisos (= 30) da última hora, filas, jobs rodando, totais por status. |
 | `GET /api/servicos` / `/{slug}` | Lista simples / detalhe com problemas abertos, últimos 20 jobs, filas e últimos 20 heartbeats. |
-| `PATCH /api/servicos/{slug}` | Só campos enviados (`exclude_unset`). Nome editado marca `nome_editado`; repositório é normalizado (422 se inválido); `tolerancia_s = 0` volta à automática. Recalcula o status. |
+| `PATCH /api/servicos/{slug}` | Só campos enviados (`exclude_unset`). Nome editado marca `nome_editado`; repositório e endereço são normalizados (422 se inválidos; vazio limpa); `tolerancia_s = 0` volta à automática. Recalcula o status. |
 | `DELETE /api/servicos/{slug}` | Apaga amostras, filas, jobs, problemas, logs, heartbeats e o serviço. Se o serviço continuar enviando, é cadastrado de novo. |
 | `GET /api/logs` | Mais novos primeiro, paginação por **id** (`antes=<id>` página anterior, `depois=<id>` modo ao vivo), `nivel` = mínimo, `q` = `LIKE` em mensagem e traceback, `limite` ≤ 2000. Devolve `ultimo_id` global. |
 | `GET /api/logs/modulos` | `DISTINCT modulo`. |
@@ -397,7 +399,7 @@ vai com `Cache-Control: no-store` e só gestor (ou script) acessa.
   requisição), `url_docker` (`http://aplogs-api:8000`), intervalo padrão e tolerância mínima.
 - `POST /api/integracao` (`IntegracaoIn`: `servico`, `nome`, `descricao`, `grupo`, `repositorio`, `intervalo_s`
   5–86400, `onde` = `rede|docker`, `linguagem` = `python|node|outro`, `url`):
-  1. normaliza o slug e o repositório (422 se inválidos) e valida a URL (`http(s)://`);
+  1. normaliza o slug, o repositório e o endereço do serviço (422 se inválidos) e valida a URL (`http(s)://`);
   2. **cadastra** o serviço se não existe (`status = desconhecido`, log "Integração preparada no painel por …")
      ou atualiza o existente — `nome` e `intervalo_s` sempre; `grupo`, `descricao`, `repositorio` só se vierem
      preenchidos (limpar é na Configuração do serviço). `nome_editado` não é marcado: o `APLOGS_NOME` do `.env`
@@ -456,7 +458,7 @@ HTML + CSS + JS puro, sem build, servido por `GET /` (`Cache-Control: no-cache`)
   (mouse, teclado, clique, rolagem, toque) ou com a aba oculta; corta trechos longos a cada 5 min; envia a cada
   60 s para `/api/atividade` (máx. 500 eventos por envio; reenvia em falha, guardando até 2000); no
   `pagehide`/logout usa `keepalive`. Presença: `ativo`, `ocioso`, `saiu`.
-- Todo texto dinâmico passa por `esc()` antes de ir para `innerHTML`; links de repositório são só `http(s)`
+- Todo texto dinâmico passa por `esc()` antes de ir para `innerHTML`; links de repositório e de endereço são só `http(s)`
   (garantido também no servidor por `normalizar_repositorio`).
 
 ---
@@ -468,7 +470,7 @@ Arquivo único, só biblioteca padrão, para copiar nos robôs.
 - `Aplogs(url, chave, servico, ...)`; `branch`/`commit` caem em `GIT_BRANCH`/`GIT_COMMIT` do ambiente.
 - `Aplogs.do_ambiente(**extra)` monta o cliente com as variáveis geradas por "Gerenciar integração"
   (`APLOGS_URL`, `APLOGS_KEY`, `APLOGS_SERVICO` obrigatórias; `APLOGS_NOME`, `APLOGS_INTERVALO_S`,
-  `APLOGS_GRUPO`, `APLOGS_REPOSITORIO`, `APLOGS_VERSAO` opcionais). Falta obrigatória → `ValueError`.
+  `APLOGS_GRUPO`, `APLOGS_REPOSITORIO`, `APLOGS_ENDERECO`, `APLOGS_VERSAO` opcionais). Falta obrigatória → `ValueError`.
 - `iniciar()` sobe uma thread que manda heartbeat a cada `intervalo_s` e descarrega logs a cada ~2 s
   (lotes de até 1000). `dados_fn` opcional complementa os `dados` de cada heartbeat.
 - Logs vão para uma `Queue` limitada (`max_buffer=5000`); cheia, descarta o mais velho; falha no envio devolve
@@ -500,7 +502,7 @@ python -m pytest tests -q
 - Cobertura atual (35 testes): autenticação (chave, secret, login, pendente, renovação única do token, acesso
   revogado, papéis declarados, permissões por papel, atividade), heartbeat e cadastro, offline/volta, parada
   normal, degradado, pausa, slug inválido, logs (filtros, paginação, linha avulsa), problemas (eventos e estado),
-  jobs, filas, apagar serviço, limpeza, repositório pelo heartbeat e pelo painel, heartbeat por URL, "Gerenciar integração" (só gestor, `.env`/`.txt`
+  jobs, filas, apagar serviço, limpeza, repositório e endereço pelo heartbeat e pelo painel, heartbeat por URL, "Gerenciar integração" (só gestor, `.env`/`.txt`
   gerados, cadastro e atualização sem apagar campos, rede Docker, validações, aspas do `.env`) e
   `Aplogs.do_ambiente()` do cliente Python.
 
