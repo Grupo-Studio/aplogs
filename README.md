@@ -18,8 +18,8 @@ O primeiro serviço conectado é a **aplogin** (branch Receita), que aparece com
 
 | | |
 |---|---|
-| **Heartbeat** | Cada serviço manda "estou vivo" a cada N segundos. Sem heartbeat por mais que a tolerância (padrão: 3 × intervalo, mínimo 60 s), o serviço fica **offline**, ganha um log e um **problema crítico**, que é resolvido sozinho quando ele volta. Desligamento normal (heartbeat `parando`) aparece como "foi parado", não como queda. |
-| **Projetos** | Cada serviço mostra o repositório do GitHub e qual **branch @ commit** está rodando, com link (o serviço manda no heartbeat ou você preenche no painel). |
+| **Heartbeat** | Cada serviço manda "estou vivo" a cada N segundos. Sem heartbeat por mais que a tolerância (padrão: 3 × intervalo, mínimo 60 s), o serviço fica **offline**, ganha um log e um **problema crítico**, que é resolvido sozinho quando ele volta. Desligamento normal (heartbeat `parando`) aparece como "foi parado", não como queda. Se o `host` ou o `repositorio` do heartbeat mudarem (o serviço foi para outra máquina), o card atualiza e o log do serviço registra de onde para onde. |
+| **Projetos** | Cada serviço mostra o repositório do GitHub e qual **branch @ commit** está rodando, com link. O serviço manda no heartbeat (`repositorio`) e, se mandar, vale o dele; o painel é para quem não manda. |
 | **Status** | `online` · `degradado` (o serviço reportou problema) · `offline` · `sem heartbeat` · `pausado` (monitoramento desligado no painel). Linha do tempo da última hora em cada card. |
 | **Logs** | Busca, filtro por serviço/nível/módulo, modo ao vivo, traceback e contexto expansíveis. |
 | **Problemas** | Abertos pelos serviços (com deduplicação por chave e contagem de ocorrências) ou pelo monitor. Reconhecer / resolver no painel. |

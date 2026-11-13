@@ -82,17 +82,25 @@ def _registrar_heartbeat(db: Session, hb: HeartbeatIn) -> dict:
     momento = agora()
     if hb.nome and not s.nome_editado:
         s.nome = sv.corta(hb.nome, 160)
+    host_antes, repo_antes = s.host, s.repositorio
     for campo in ("descricao", "grupo", "versao", "host", "ambiente"):
         valor = getattr(hb, campo)
         if valor is not None and not (campo == "descricao" and s.nome_editado):
             setattr(s, campo, valor)
     if hb.intervalo_s:
         s.intervalo_s = hb.intervalo_s
-    if hb.repositorio and not s.repositorio:        # o heartbeat só preenche; quem troca é o painel
-        try:
+    if hb.repositorio:                              # quem manda o repositório no heartbeat é a fonte: o .env
+        try:                                        # do serviço vale sobre o painel (painel = quem não manda)
             s.repositorio = sv.normalizar_repositorio(hb.repositorio)
         except ValueError:
             pass                                    # repositório estranho não derruba o heartbeat
+    # Mudou de lugar: o card já mostra o novo; o log do serviço guarda de onde para onde.
+    if host_antes and s.host and s.host != host_antes:
+        sv.registrar_log(db, s, "WARNING", f"Serviço agora roda em outra máquina: {host_antes} → {s.host}",
+                         {"host_antes": host_antes, "host": s.host})
+    if repo_antes and s.repositorio and s.repositorio != repo_antes:
+        sv.registrar_log(db, s, "WARNING", f"Serviço agora roda outro repositório: {repo_antes} → {s.repositorio}",
+                         {"repositorio_antes": repo_antes, "repositorio": s.repositorio})
     if hb.branch is not None:
         s.branch = hb.branch.strip() or None
     if hb.commit is not None:

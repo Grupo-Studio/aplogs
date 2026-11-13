@@ -339,11 +339,18 @@ def test_repositorio_pelo_heartbeat(client, ingest, painel):
     s = client.get("/api/servicos/proj-a", headers=painel).json()["servico"]
     assert s["repositorio"] == "https://github.com/Grupo-Studio/aplogin"
     assert s["branch"] == "Receita-aplogs" and s["commit"] == "39d86b0f3e2a1c"
-    # o heartbeat não troca o repositório que já existe; branch/commit sempre atualizam
+    # repositório novo no heartbeat (o .env do serviço mudou): troca e fica registrado no log
     client.post("/api/ingest/heartbeat", headers=ingest, json={
         "servico": "proj-a", "repositorio": "outro/repo", "commit": "abcdef1"})
     s = client.get("/api/servicos/proj-a", headers=painel).json()["servico"]
-    assert s["repositorio"] == "https://github.com/Grupo-Studio/aplogin" and s["commit"] == "abcdef1"
+    assert s["repositorio"] == "https://github.com/outro/repo" and s["commit"] == "abcdef1"
+    logs = client.get("/api/logs?servico=proj-a", headers=painel).json()
+    logs = logs.get("logs", logs) if isinstance(logs, dict) else logs
+    assert any("outro repositório" in l["mensagem"] and "Grupo-Studio/aplogin" in l["mensagem"] for l in logs)
+    # heartbeat sem repositório não apaga o que existe
+    client.post("/api/ingest/heartbeat", headers=ingest, json={"servico": "proj-a"})
+    assert client.get("/api/servicos/proj-a", headers=painel).json()["servico"]["repositorio"] \
+        == "https://github.com/outro/repo"
     # repositório estranho não derruba o heartbeat
     assert client.post("/api/ingest/heartbeat", headers=ingest,
                        json={"servico": "proj-b", "repositorio": "javascript:alert(1)"}).status_code == 200
@@ -360,6 +367,17 @@ def test_repositorio_pelo_painel(client, ingest, painel):
     assert r.json()["servico"]["repositorio"] is None
     assert any(s["slug"] == "proj-c" and "repositorio" in s
                for s in client.get("/api/painel", headers=painel).json()["servicos"])
+
+
+def test_mudanca_de_maquina_fica_no_log(client, ingest, painel):
+    client.post("/api/ingest/heartbeat", headers=ingest, json={"servico": "proj-m", "host": "vps-a (10.0.0.1)"})
+    client.post("/api/ingest/heartbeat", headers=ingest, json={"servico": "proj-m", "host": "vps-a (10.0.0.1)"})
+    client.post("/api/ingest/heartbeat", headers=ingest, json={"servico": "proj-m", "host": "vps-b (10.0.0.2)"})
+    assert client.get("/api/servicos/proj-m", headers=painel).json()["servico"]["host"] == "vps-b (10.0.0.2)"
+    logs = client.get("/api/logs?servico=proj-m", headers=painel).json()
+    logs = logs.get("logs", logs) if isinstance(logs, dict) else logs
+    trocas = [l for l in logs if "outra máquina" in l["mensagem"]]
+    assert len(trocas) == 1 and "vps-a (10.0.0.1) → vps-b (10.0.0.2)" in trocas[0]["mensagem"]
 
 
 # ── Login central: permissões por papel e atividade ──────────────────────────

@@ -710,7 +710,7 @@ async function atualizarGaveta(completo = false) {
       <label>Nome<input name="nome" value="${esc(s.nome)}" maxlength="160"></label>
       <label>Descrição<textarea name="descricao" rows="2">${esc(s.descricao || "")}</textarea></label>
       <label>Grupo (agrupa os cards)<input name="grupo" value="${esc(s.grupo || "")}" maxlength="80" placeholder="ex.: Receita, RPA, APIs"></label>
-      <label>Repositório no GitHub<input name="repositorio" value="${esc(s.repositorio || "")}" maxlength="300" placeholder="ex.: Grupo-Studio/aplogin ou a URL do repositório"></label>
+      <label>Repositório no GitHub<input name="repositorio" value="${esc(s.repositorio || "")}" maxlength="300" placeholder="ex.: Grupo-Studio/aplogin ou a URL do repositório"><span class="dica">Se o serviço manda o repositório no heartbeat (APLOGS_REPOSITORIO), vale o dele.</span></label>
       <label>Tolerância sem heartbeat, em segundos (vazio = automática: ${Math.max(3 * s.intervalo_s, 60)} s)
         <input name="tolerancia_s" type="number" min="0" value="${s.tolerancia_s ?? ""}"></label>
       <label class="chave"><input name="monitorar" type="checkbox" ${s.monitorar ? "checked" : ""}> Monitorar (desligado = sem alerta de offline)</label>
