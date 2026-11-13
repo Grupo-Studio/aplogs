@@ -15,6 +15,8 @@ const estado = {
   probStatus: "abertos",
   gaveta: null,                // slug aberto na gaveta
   integracao: false,           // gaveta mostrando "Gerenciar integração"
+  envAberto: null,             // slug com a caixa do .env aberta na gaveta
+  envCache: null,
   timers: [],
   usuario: null,               // quem entrou (login central): {nome, email, papel, permissoes}
 };
@@ -645,6 +647,7 @@ function cardFila(f) {
 
 function abrirGaveta(slug) {
   estado.gaveta = slug;
+  estado.envAberto = estado.envCache = null;
   $("#gaveta").hidden = false;
   $("#gaveta-fundo").hidden = false;
   $("#gaveta").innerHTML = `<p class="mudo">Carregando…</p>`;
@@ -654,6 +657,7 @@ function abrirGaveta(slug) {
 function fecharGaveta() {
   estado.gaveta = null;
   estado.integracao = false;
+  estado.envAberto = estado.envCache = null;
   $("#gaveta").hidden = true;
   $("#gaveta-fundo").hidden = true;
 }
@@ -665,7 +669,7 @@ async function atualizarGaveta(completo = false) {
   const slug = estado.gaveta;
   if (!slug) return;
   // não redesenha enquanto o usuário edita
-  if (!completo && $("#gaveta").contains(document.activeElement) && document.activeElement.matches("input, textarea")) return;
+  if (!completo && $("#gaveta").contains(document.activeElement) && document.activeElement.matches("input, textarea, select")) return;
   let r;
   try { r = await api(`/api/servicos/${encodeURIComponent(slug)}`); } catch (err) { $("#gaveta").innerHTML = `<p class="erro">${esc(err.message)}</p>`; return; }
   if (estado.gaveta !== slug) return;
@@ -675,9 +679,11 @@ async function atualizarGaveta(completo = false) {
     <div class="gaveta-topo">
       <div><h2>${esc(s.nome)}</h2><div class="slug mono fraco">${esc(s.slug)}</div></div>
       <div style="display:flex;gap:8px;align-items:center">${pilula(s.status)}
-        ${pode("gerenciar") ? `<button class="fantasma perigo" id="g-excluir" title="Apagar este serviço e todos os dados dele">🗑 Excluir</button>` : ""}
+        ${pode("gerenciar") ? `<button class="fantasma" id="g-env" title="Copia as variáveis que este serviço precisa no .env">⧉ Copiar .env</button>
+        <button class="fantasma perigo" id="g-excluir" title="Apagar este serviço e todos os dados dele">🗑 Excluir</button>` : ""}
         <button class="fantasma" id="g-fechar">✕</button></div>
     </div>
+    <div id="g-env-caixa" ${estado.envAberto === slug ? "" : "hidden"}></div>
     ${s.descricao ? `<p class="mudo">${esc(s.descricao)}</p>` : ""}
     ${linhaTempo(s.timeline)}
 
@@ -753,6 +759,55 @@ async function atualizarGaveta(completo = false) {
   $("#g-integracao").onclick = () => abrirIntegracao(s);
   $("#g-apagar").onclick = () => excluirServico(s);
   const bx = $("#g-excluir"); if (bx) bx.onclick = () => excluirServico(s);
+  const be = $("#g-env"); if (be) be.onclick = () => mostrarEnv(s.slug, true);
+  if (estado.envAberto === slug && estado.envCache) desenharEnv(estado.envCache);
+}
+
+// ── .env num clique ─────────────────────────────────────────────────────────
+// Botão "Copiar .env" no detalhe do serviço: busca o bloco pronto, mostra e já copia.
+// Fica aberto enquanto a gaveta é redesenhada (a cada 5 s) sem buscar de novo.
+
+async function mostrarEnv(slug, copiar, onde = "rede") {
+  let r;
+  try { r = await api(`/api/integracao/${encodeURIComponent(slug)}/env?onde=${onde}`); } catch (err) {
+    toast(esc(err.message), "var(--vermelho)");
+    return;
+  }
+  if (estado.gaveta !== slug) return;
+  estado.envAberto = slug;
+  estado.envCache = r;
+  desenharEnv(r);
+  if (copiar) {
+    const ok = await copiarTexto(r.env, $("#g-env-texto"));
+    toast(ok ? "Copiado. Cole no .env do serviço." : "Não deu para copiar sozinho: o texto ficou selecionado, use Ctrl+C.",
+      ok ? "var(--verde)" : "var(--amarelo)");
+  }
+}
+
+function desenharEnv(r) {
+  const caixa = $("#g-env-caixa");
+  if (!caixa) return;
+  const local = r.onde === "rede" && /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/i.test(r.url);
+  caixa.hidden = false;
+  caixa.innerHTML = `
+    <div class="env-caixa">
+      <div class="env-topo"><b>.env do serviço</b>
+        <select id="g-env-onde" title="De onde o serviço chama a aplogs">
+          <option value="rede" ${r.onde === "rede" ? "selected" : ""}>Roda em outra máquina</option>
+          <option value="docker" ${r.onde === "docker" ? "selected" : ""}>Container nesta máquina</option>
+        </select>
+        <button class="fantasma" id="g-env-fechar" title="Fechar">✕</button></div>
+      <textarea class="codigo" id="g-env-texto" readonly rows="${r.env.trim().split("\n").length}" spellcheck="false">${esc(r.env)}</textarea>
+      ${local ? `<p class="dica atencao">APLOGS_URL saiu como ${esc(r.url)} porque o painel foi aberto por aí: troque pelo IP da máquina da aplogs (ou defina APLOGS_URL_PUBLICA).</p>` : ""}
+      <div class="integracao-acoes"><button class="botao" id="g-env-copiar">Copiar</button></div>
+      <p class="aviso-chave">⚠ Tem a chave de envio da aplogs: trate como senha e não suba o .env para o git.</p>
+    </div>`;
+  $("#g-env-copiar").onclick = async () => {
+    const ok = await copiarTexto(r.env, $("#g-env-texto"));
+    toast(ok ? "Copiado." : "O texto ficou selecionado, use Ctrl+C.", ok ? "var(--verde)" : "var(--amarelo)");
+  };
+  $("#g-env-onde").onchange = e => mostrarEnv(r.servico, false, e.target.value);
+  $("#g-env-fechar").onclick = () => { estado.envAberto = null; estado.envCache = null; caixa.hidden = true; caixa.innerHTML = ""; };
 }
 
 async function excluirServico(s) {

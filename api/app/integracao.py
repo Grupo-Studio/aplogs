@@ -115,6 +115,20 @@ def gerar(corpo: IntegracaoIn, request: Request, response: Response, db: Session
             "arquivo": f"aplogs-integracao-{s.slug}.txt"}
 
 
+@router.get("/{slug}/env")
+def env_do_servico(slug: str, request: Request, response: Response, onde: Literal["rede", "docker"] = "rede",
+                   db: Session = Depends(get_db), ator=Depends(auth.exigir("gerenciar"))):
+    """O .env de um serviço que já existe, num clique (sem formulário): é o mesmo bloco do "Gerenciar
+    integração", montado com o que a aplogs já sabe do serviço. Não muda nada no banco."""
+    s = sv.obter(db, slug)
+    if not s:
+        raise HTTPException(404, "serviço não encontrado")
+    url = URL_DOCKER if onde == "docker" else url_sugerida(request)
+    acesso.registrar_acao(ator, "env_copiado", s.slug, onde=onde)
+    response.headers.update(_SEM_CACHE)
+    return {"ok": True, "servico": s.slug, "onde": onde, "url": url, "env": gerar_env(s, url)}
+
+
 # ── .env ─────────────────────────────────────────────────────────────────────
 
 def _valor_env(valor) -> str:

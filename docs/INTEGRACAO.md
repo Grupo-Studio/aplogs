@@ -6,7 +6,9 @@ Para conectar um serviço não precisa configurar nada na aplogs: é só chamar 
 ## Em 1 minuto
 
 **Mais fácil:** no painel, *Serviços → Gerenciar integração* (papel gestor). Ele gera o bloco do `.env` e um `.txt`
-com o passo a passo para o seu serviço. O resto desta página é o que está por trás disso.
+com o passo a passo para o seu serviço. Para um serviço que **já aparece** no painel, é um clique: abra o serviço e
+use **⧉ Copiar .env** (escolha "outra máquina" ou "container nesta máquina"). O resto desta página é o que está por
+trás disso.
 
 Variáveis que o painel gera (o cliente Python lê todas com `Aplogs.do_ambiente()`):
 

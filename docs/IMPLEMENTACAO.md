@@ -230,7 +230,7 @@ Definidos em `acesso.py` e declarados no apusers na subida (`PATCH /v1/service/m
 |---|---|---|
 | `ver` | visualizador, operador, gestor | todas as leituras (`auth.painel = exigir("ver")`, no router do painel) |
 | `tratar` | operador, gestor | `POST /api/problemas/{id}/reconhecer` e `/resolver` |
-| `gerenciar` | gestor | `PATCH`/`DELETE /api/servicos/{slug}`, `GET`/`POST /api/integracao` |
+| `gerenciar` | gestor | `PATCH`/`DELETE /api/servicos/{slug}`, `GET`/`POST /api/integracao`, `GET /api/integracao/{slug}/env` |
 
 Administrador do apusers (`user.is_admin` no `verify`/`login`) vira `gestor` (`acesso.PAPEL_ADMIN`), mesmo com
 acesso sem papel; `Usuario.admin` vai para o painel, que mostra "gestor · admin". Tirar o admin no apusers vale em
@@ -408,6 +408,9 @@ vai com `Cache-Control: no-store` e só gestor (ou script) acessa.
      `/api/health` ou trecho do `docker-compose.yml` com a rede `aplogs` —, código na linguagem escolhida, como
      conferir com a tolerância calculada, e o que mais dá para enviar);
   4. registra a ação `integracao_gerada` no apusers.
+- `GET /api/integracao/{slug}/env?onde=rede|docker`: o `.env` de um serviço que **já existe**, num clique (botão
+  "Copiar .env" no detalhe do serviço). Mesmo `gerar_env`, com o que está no banco; não muda nada. `APLOGS_URL` =
+  `url_sugerida` (rede) ou `http://aplogs-api:8000` (docker). 404 se o serviço não existe. Registra `env_copiado`.
 - Valores do `.env` passam por `_valor_env`: espaços repetidos/quebras de linha viram um espaço; com `#`, `$`, aspas, barra invertida
   ou crase, o valor vai entre aspas simples (o docker compose não interpola `$` dentro delas; python-dotenv e
   `node --env-file` também aceitam), ou duplas escapadas se houver aspa simples.

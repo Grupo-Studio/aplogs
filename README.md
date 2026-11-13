@@ -107,6 +107,7 @@ grupo, o repositório, o endereço do serviço na rede, o intervalo de heartbeat
 `APLOGS_SERVICO`, `APLOGS_ENDERECO`...) e um `.txt` com o passo a passo e o código pronto (Python, Node ou curl). O endereço que vai no
 `.env` é o pelo qual o painel foi aberto; para fixar outro (ex.: o IP da máquina), use `APLOGS_URL_PUBLICA`.
 Como o `.env` leva a chave de envio, só o papel gestor vê o botão.
+Serviço que já está no painel: abra o detalhe e clique em **⧉ Copiar .env** — o bloco sai pronto (e já copiado).
 
 - **URL:** `http://aplogs-api:8000` para containers na mesma máquina (rede Docker `aplogs`);
   `http://<ip>:3070` para o resto.
@@ -159,6 +160,7 @@ Documentação interativa em `/api/docs`.
 | GET | `/api/filas` | Filas + amostras da última hora |
 | GET | `/api/heartbeats` | `?servico=&limite=` |
 | GET/POST | `/api/integracao` | Sugestões do formulário · cadastra o serviço e gera `env` + `txt` (gestor) |
+| GET | `/api/integracao/{slug}/env` | `.env` de um serviço existente, num clique (`?onde=rede\|docker`; gestor) |
 
 Entrada do painel:
 
