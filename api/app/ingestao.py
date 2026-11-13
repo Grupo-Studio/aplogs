@@ -83,14 +83,15 @@ def _registrar_heartbeat(db: Session, hb: HeartbeatIn) -> dict:
     momento = agora()
     if hb.nome and not s.nome_editado:
         s.nome = sv.corta(hb.nome, 160)
+    host_antes, repo_antes = s.host, s.repositorio
     for campo in ("descricao", "grupo", "versao", "host", "ambiente"):
         valor = getattr(hb, campo)
         if valor is not None and not (campo == "descricao" and s.nome_editado):
             setattr(s, campo, valor)
     if hb.intervalo_s:
         s.intervalo_s = hb.intervalo_s
-    if hb.repositorio and not s.repositorio:        # o heartbeat só preenche; quem troca é o painel
-        try:
+    if hb.repositorio:                              # quem manda o repositório no heartbeat é a fonte: o .env
+        try:                                        # do serviço vale sobre o painel (painel = quem não manda)
             s.repositorio = sv.normalizar_repositorio(hb.repositorio)
         except ValueError:
             pass                                    # repositório estranho não derruba o heartbeat
