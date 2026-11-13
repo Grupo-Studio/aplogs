@@ -95,11 +95,15 @@ def _registrar_heartbeat(db: Session, hb: HeartbeatIn) -> dict:
             s.repositorio = sv.normalizar_repositorio(hb.repositorio)
         except ValueError:
             pass                                    # repositório estranho não derruba o heartbeat
-    if hb.endereco:                                 # sempre atualiza: é onde o serviço está atendendo agora
-        try:
-            s.endereco = sv.normalizar_endereco(hb.endereco)
-        except ValueError:
-            pass                                    # endereço estranho não derruba o heartbeat
+    if hb.endereco:
+        sv.endereco_do_heartbeat(db, s, hb.endereco)
+    # Mudou de lugar: o card já mostra o novo; o log do serviço guarda de onde para onde.
+    if host_antes and s.host and s.host != host_antes:
+        sv.registrar_log(db, s, "WARNING", f"Serviço agora roda em outra máquina: {host_antes} → {s.host}",
+                         {"host_antes": host_antes, "host": s.host})
+    if repo_antes and s.repositorio and s.repositorio != repo_antes:
+        sv.registrar_log(db, s, "WARNING", f"Serviço agora roda outro repositório: {repo_antes} → {s.repositorio}",
+                         {"repositorio_antes": repo_antes, "repositorio": s.repositorio})
     if hb.branch is not None:
         s.branch = hb.branch.strip() or None
     if hb.commit is not None:

@@ -40,6 +40,8 @@ class Servico(Base):
     host:                Mapped[str | None] = mapped_column(String(160))
     ambiente:            Mapped[str | None] = mapped_column(String(40))
     endereco:            Mapped[str | None] = mapped_column(String(300))         # http://192.168.1.100:3067 (onde atende)
+    endereco_reportado:  Mapped[str | None] = mapped_column(String(300))         # o último APLOGS_ENDERECO do heartbeat
+    endereco_editado:    Mapped[bool | None] = mapped_column(Boolean, default=False)  # trocado no painel: vale o do painel
     repositorio:         Mapped[str | None] = mapped_column(String(300))         # https://github.com/dono/repo
     branch:              Mapped[str | None] = mapped_column(String(120))         # branch que está rodando
     commit_sha:          Mapped[str | None] = mapped_column(String(64))          # commit que está rodando

@@ -107,6 +107,39 @@ def normalizar_endereco(valor) -> str | None:
     return v
 
 
+def endereco_do_heartbeat(db: Session, s: Servico, valor) -> None:
+    """APLOGS_ENDERECO que veio no heartbeat. Quem troca o endereço no painel ganha: o heartbeat só
+    troca quando o valor que o serviço manda MUDA (o .env dele mudou = ele foi para outro lugar).
+    Enquanto ele mandar o mesmo de sempre, fica o do painel. Nada disso apaga heartbeats ou logs."""
+    try:
+        novo = normalizar_endereco(valor)
+    except ValueError:
+        return                                       # endereço estranho não derruba o heartbeat
+    if not novo or novo == s.endereco_reportado:
+        return
+    primeiro = s.endereco_reportado is None
+    s.endereco_reportado = novo
+    if primeiro and s.endereco_editado and s.endereco:
+        return                                       # 1º envio depois de alguém trocar no painel: fica o do painel
+    antes = s.endereco
+    s.endereco, s.endereco_editado = novo, False
+    if antes and antes != novo:
+        registrar_log(db, s, "INFO", f"Endereço do serviço mudou (APLOGS_ENDERECO): {antes} → {novo}",
+                      {"endereco_antes": antes, "endereco": novo, "origem": "heartbeat"})
+
+
+def trocar_endereco_no_painel(db: Session, s: Servico, valor, quem: str) -> None:
+    """Endereço trocado à mão (Configuração ou Gerenciar integração). Vale sobre o APLOGS_ENDERECO que o
+    serviço continuar mandando, até o .env dele mudar. O histórico (heartbeats, logs) fica todo."""
+    novo = normalizar_endereco(valor)                # ValueError sobe para a rota responder 422
+    if novo == s.endereco:
+        return
+    antes = s.endereco
+    s.endereco, s.endereco_editado = novo, novo is not None
+    registrar_log(db, s, "INFO", f"Endereço trocado no painel por {quem}: {antes or '—'} → {novo or '—'}",
+                  {"endereco_antes": antes, "endereco": novo, "origem": "painel", "por": quem})
+
+
 def data_utc(valor) -> datetime | None:
     """ISO 8601 (com ou sem fuso; sem fuso = UTC) ou epoch em segundos → datetime UTC sem fuso."""
     if valor in (None, ""):

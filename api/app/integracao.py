@@ -101,8 +101,10 @@ def gerar(corpo: IntegracaoIn, request: Request, response: Response, db: Session
         s.descricao = descricao
     if repositorio:
         s.repositorio = repositorio
-    if endereco:
-        s.endereco = endereco
+    if endereco and criado:
+        s.endereco, s.endereco_editado = endereco, True
+    elif endereco:
+        sv.trocar_endereco_no_painel(db, s, endereco, quem)
     if criado:
         sv.registrar_log(db, s, "INFO", f"Integração preparada no painel por {quem}. Aguardando o primeiro heartbeat.")
     db.commit()

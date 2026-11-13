@@ -20,7 +20,7 @@ O primeiro serviço conectado é a **aplogin** (branch Receita), que aparece com
 |---|---|
 | **Heartbeat** | Cada serviço manda "estou vivo" a cada N segundos. Sem heartbeat por mais que a tolerância (padrão: 3 × intervalo, mínimo 60 s), o serviço fica **offline**, ganha um log e um **problema crítico**, que é resolvido sozinho quando ele volta. Desligamento normal (heartbeat `parando`) aparece como "foi parado", não como queda. |
 | **Projetos** | Cada serviço mostra o repositório do GitHub e qual **branch @ commit** está rodando, com link (o serviço manda no heartbeat ou você preenche no painel). |
-| **Endereço** | Onde o serviço atende na rede interna (ex.: `http://192.168.1.100:3067`), com link no card. Vem no heartbeat (`APLOGS_ENDERECO`) ou é preenchido no painel. |
+| **Endereço** | Onde o serviço atende na rede interna (ex.: `http://192.168.1.100:3067`), com link no card. Vem no heartbeat (`APLOGS_ENDERECO`) ou é preenchido no painel. Mudou a porta? Troque no painel: o histórico continua e o heartbeat não desfaz (só um `APLOGS_ENDERECO` diferente troca de novo). |
 | **Status** | `online` · `degradado` (o serviço reportou problema) · `offline` · `sem heartbeat` · `pausado` (monitoramento desligado no painel). Linha do tempo da última hora em cada card. |
 | **Logs** | Busca, filtro por serviço/nível/módulo, modo ao vivo, traceback e contexto expansíveis. |
 | **Problemas** | Abertos pelos serviços (com deduplicação por chave e contagem de ocorrências) ou pelo monitor. Reconhecer / resolver no painel. |
